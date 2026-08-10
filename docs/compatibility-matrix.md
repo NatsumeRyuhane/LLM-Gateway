@@ -57,11 +57,20 @@ committing route/attempt response headers. Error responses may contain a request
 ID but do not disclose private route or endpoint information.
 
 The JSON body `stream` value selects buffered or SSE mode and is authoritative;
-an absent value defaults to `false`. An absent `Accept` header or `*/*` accepts
-the selected mode. A specific incompatible `Accept` value is rejected as
-`client.invalid_request` before dispatch rather than normalized: this includes
-`stream: true` with `Accept: application/json` and `stream: false` (or absent)
-with `Accept: text/event-stream`.
+an absent value defaults to `false`. An absent `Accept` header accepts the
+selected mode. The gateway parses comma-separated ranges from the bounded set
+`application/json`, `text/event-stream`, `application/*`, `text/*`, and `*/*`,
+each optionally carrying one valid `q` value and no other parameter. For the
+representation selected by `stream`, the most-specific matching range wins
+(exact, then type wildcard, then `*/*`); repeated ranges at that specificity use
+the highest quality. The selected representation is acceptable only when that
+quality is greater than zero. Quality never overrides `stream` to select the
+other representation, so a mixed header such as `text/event-stream,
+application/json` accepts either body-selected mode. Invalid syntax, an
+unregistered range/parameter, or no positive-quality match returns
+`client.invalid_request` before dispatch rather than normalizing the request.
+The cases are versioned in
+`tests/conformance/gateway.adapter.v0/http/accept-selection.json`.
 
 ## Chat Completions request
 
