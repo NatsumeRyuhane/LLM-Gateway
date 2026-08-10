@@ -42,8 +42,8 @@ through to a provider.
 | --- | --- | --- |
 | `Authorization: Bearer <gateway credential>` | Supported | Authenticates the registered application; never forwarded upstream |
 | `Content-Type: application/json` | Supported | Required for Chat Completions request bodies |
-| `Accept: application/json` | Supported | Buffered response |
-| `Accept: text/event-stream` or `stream: true` | Supported | SSE response when an eligible streaming route exists |
+| `Accept: application/json` | Supported | Compatible only with buffered mode (`stream` absent or `false`) |
+| `Accept: text/event-stream` | Supported | Compatible only with `stream: true`; SSE requires an eligible streaming route |
 | `X-Gateway-Conversation-ID` | Supported | Optional opaque application-scoped attribution; never forwarded or used as a metric label |
 | `X-Gateway-Run-ID` | Supported | Optional opaque application-scoped attribution; never forwarded or used as a metric label |
 | `X-Gateway-Request-ID` response header | Supported | Gateway correlation ID |
@@ -56,12 +56,19 @@ For streaming success, the gateway buffers the first valid model event before
 committing route/attempt response headers. Error responses may contain a request
 ID but do not disclose private route or endpoint information.
 
+The JSON body `stream` value selects buffered or SSE mode and is authoritative;
+an absent value defaults to `false`. An absent `Accept` header or `*/*` accepts
+the selected mode. A specific incompatible `Accept` value is rejected as
+`client.invalid_request` before dispatch rather than normalized: this includes
+`stream: true` with `Accept: application/json` and `stream: false` (or absent)
+with `Accept: text/event-stream`.
+
 ## Chat Completions request
 
 | Field | Status | Canonical behavior |
 | --- | --- | --- |
-| `model` | Supported | Required authorized gateway model group or concrete route alias |
-| `messages` | Supported | Required ordered message array |
+| `model` | Supported | Required gateway model group or concrete route alias the caller is authorized to use |
+| `messages` | Supported | Required message array preserved in request order |
 | `stream` | Supported | Defaults to `false`; `true` requires streaming capability |
 | `stream_options.include_usage` | Supported | Requests a final usage chunk when available; interrupted streams may lack it |
 | `tools` with `type: function` | Conditional | Requires function-tool capability and supported schema subset |
@@ -161,7 +168,8 @@ a successful generation.
 | `data: {chat.completion.chunk}` | Supported | Valid OpenAI-compatible chunk serialization |
 | Stable chunk `id`, `model`, `created`, `object` | Supported | Gateway-owned values remain consistent for one response |
 | Initial assistant role delta | Supported | May accompany the first model event |
-| Ordered content/refusal deltas | Supported/Conditional | Never reordered or merged across attempts |
+| Ordered content deltas | Supported | Preserved in event order and never merged across attempts |
+| Ordered refusal deltas | Conditional | Preserved separately in event order only when the route declares refusal-output support; never merged across attempts or into content |
 | Tool-call `index`, `id`, `name`, argument deltas | Conditional | Arbitrary provider chunking normalized to ordered canonical events |
 | `finish_reason` chunk | Supported | Emitted only after output/tool/structured validation permits completion |
 | Final empty-choice usage chunk | Supported when requested/available | Precedes `[DONE]`; all earlier chunks carry null/absent usage |
