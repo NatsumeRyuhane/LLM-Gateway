@@ -287,12 +287,14 @@ same boundaries, never per-route custom buckets. Token and cost measures are
 counters, not per-request labeled gauges. Retry amplification, completion
 rates, throughput, and SLI ratios are recording rules derived from the inventory.
 
-Exact failure codes, policy versions, request IDs, provider status codes, and
-model names supplied at runtime belong in records/traces—not metric labels.
-Route values in normal records and traces are limited to registered `route_id`
-values or approved redacted route templates; raw endpoint hosts are prohibited.
-A schema test enumerates every instrument and rejects any label not listed in
-this table.
+Exact failure codes, policy versions, request IDs, and provider status codes
+belong in records/traces—not metric labels. Exact model names supplied at
+runtime are record-only and are prohibited in traces, metrics, and span names;
+traces use only the registered, bounded `gateway.model_group` attribute from the
+span allowlist. Route values in normal records and traces are limited to
+registered `route_id` values or approved redacted route templates; raw endpoint
+hosts are prohibited. A schema test enumerates every instrument and rejects any
+label not listed in this table.
 
 ## Structured operational events
 
