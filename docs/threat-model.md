@@ -298,6 +298,36 @@ signal. The exclusions align with the [OWASP Logging Cheat Sheet](https://cheats
 
 ## Threats and required mitigations
 
+### Authentication availability bounds
+
+V0 authentication fails closed within the following implementation limits:
+
+- An application key is at most 512 encoded bytes. Verification permits 20
+  attempts per second with a burst of 40 per source-network bucket and 1,000 per
+  second with a burst of 2,000 per deployment, with at most 256 verifications in
+  flight. Excess work is rejected before password-hash or signature work.
+- Initial bootstrap permits 5 attempts per minute with a burst of 5 per source
+  and 20 attempts per minute with a burst of 20 per deployment, with one
+  bootstrap verification in flight. Success still uses the atomic one-time
+  claim described above.
+- The application-key verifier cache holds at most 10,000 entries: successful
+  verification entries expire within 60 seconds, negative entries within 5
+  seconds, and revocation invalidates a positive entry immediately. Cache keys
+  are keyed digests, never raw credentials. Source rate-limit state is separately
+  bounded to 50,000 entries with a 10-minute idle expiry.
+- An application assertion is at most 16 KiB encoded and 32 KiB decoded, with a
+  maximum JSON nesting depth of 8, 64 claims, and 4 KiB per string claim. Only
+  configured algorithms and pre-registered verification keys are considered.
+- Request-time verification performs no DNS, HTTP, JWKS, schema, provider, or
+  other remote fetch. It uses only bounded local caches and the configured
+  credential store; required keys and metadata are refreshed out of band before
+  they become eligible for verification.
+
+All limit failures return the same bounded authentication failure shape and emit
+only rate-limited, cardinality-bounded evidence. Implementations may choose lower
+deployment-specific limits but cannot raise these maxima without a reviewed
+threat-model revision and abuse-test update.
+
 | ID | Threat | Required controls | Residual risk |
 | --- | --- | --- | --- |
 | `TH-ID-01` | Application impersonates a local subject | Namespace subjects by application; authenticate application; construct `PrincipalContext` once | A compromised application can impersonate its own subjects |
@@ -311,7 +341,7 @@ signal. The exclusions align with the [OWASP Logging Cheat Sheet](https://cheats
 | `TH-RESP-02` | Truncated or malformed stream looks successful | Canonical terminal requirement and stable protocol classifications | Provider can return semantically poor but valid content |
 | `TH-BOOT-01` | Unclaimed deployment is remotely seized | Loopback default, one-time bootstrap, no default password, fail closed | Host-level attacker can control bootstrap inputs |
 | `TH-LOG-01` | Secrets/content escape through observability | Owning-package redaction, bounded schemas, canary tests, restricted audit access | Authorized diagnostic capture deliberately increases exposure |
-| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Bounded parsing, generic failures, rate limits, cache limits, no remote fetch during application-key verification | Distributed valid-looking traffic can exhaust provisioned capacity |
+| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Enforce the application-key, bootstrap, cache, concurrency, assertion-parsing, and no-request-time-fetch bounds above; reject excess work before expensive verification | Distributed valid-looking traffic within the limits can exhaust provisioned capacity |
 
 ## Verification obligations
 
@@ -333,6 +363,7 @@ signal. The exclusions align with the [OWASP Logging Cheat Sheet](https://cheats
 | `SEC-LOG-001` Routine signals and errors contain no prohibited data | Canary-secret tests inspect logs, traces, metrics, audit, notifications, and client responses |
 | `SEC-AUDIT-001` Security lifecycle and administrative mutations are attributable | Integration tests require actor, target, action, result, time, and correlation fields |
 | `SEC-BROWSER-001` Browser artifacts contain no long-lived gateway or provider credential | Built-asset scans and BFF integration tests inspect storage, responses, and outbound calls |
+| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, concurrency, cache-entry/TTL, and bootstrap limit; instrumented resolvers/transports prove zero request-time remote fetches and bounded work under randomized invalid input |
 
 Security-sensitive requirements block the dependent implementation issue until
 their corresponding test fixture exists. Exceptions require a linked decision,
