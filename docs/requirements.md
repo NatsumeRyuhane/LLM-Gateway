@@ -52,9 +52,22 @@ separate credential classes. None may be forwarded across the wrong boundary.
 7. The operator can inspect the decision, attempts, latency, usage, and failure
    classification without prompt or completion bodies being retained.
 
-The proposed acceptance client is SillyTavern using Chat Completions streaming.
-The exact supported client version will be pinned when M1 integration fixtures
-are created.
+Two application acceptance anchors serve different purposes:
+
+1. An unmodified SillyTavern installation is the gateway-unaware compatibility
+   client. It must work through Chat Completions streaming by changing only its
+   OpenAI-compatible base URL, application credential, and selected model. It is
+   not required to understand routes, health evidence, attempts, or routing
+   policy. The exact supported version will be pinned with the M1 fixture.
+2. The first-party reference application in `frontend/apps/reference` is the
+   gateway-aware client. It exercises application-defined conversation and run
+   identities, model-group selection, route and attempt attribution, explicit
+   failover or partial-stream outcomes, cancellation, usage, and latency. It is
+   a reference integration, not part of the gateway data-plane process.
+
+The reference application's browser assets must not contain a long-lived
+application or provider credential. Its backend-for-frontend or short-lived
+credential mechanism is decided by the security contract.
 
 ### Agent tool-call journey
 
@@ -170,9 +183,10 @@ between them.
 | Decision | Proposed default | Must resolve by |
 | --- | --- | --- |
 | Exact SillyTavern acceptance version | Pin the current stable release when its fixture lands | M1 integration tests |
-| Agent acceptance client | Protocol fixture first; select an SDK with Responses support in M4 | M4 planning |
+| Later named agent SDK | Keep the v0 protocol fixture; select an SDK when Responses support enters scope | M4 planning |
 | First two real provider routes | Choose two comparable OpenAI-compatible routes plus one deliberately heterogeneous fallback | M1 provider work |
 | Conversation/run identity transport | Documented extension header plus compatible metadata where available | Protocol contract |
+| Reference application browser authentication | Backend-for-frontend or short-lived browser credentials; never embed long-lived credentials | Security contract |
 | Cross-application identity linking | Isolated application subjects in M1; OIDC/manual linking later | Security contract |
 | Initial numeric SLOs | Measure M1 baselines before setting objectives | End of M1 |
 

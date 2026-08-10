@@ -23,7 +23,8 @@ and observability contracts before implementing automatic failover.
 ## Planned repository layout
 
 - `backend/` — Go gateway, control API, and deterministic mock provider.
-- `frontend/` — React, TypeScript, and Tailwind operator dashboard.
+- `frontend/` — React, TypeScript, and Tailwind workspace containing the
+  gateway-aware reference application and operator dashboard.
 - `tests/` — cross-service end-to-end, load, replay, and fault fixtures.
 - `deploy/` — containers and local observability stack.
 - `docs/` — requirements, architecture, ADRs, reliability contracts, and

@@ -6,15 +6,19 @@ Status: M0 draft for [issue #3](https://github.com/NatsumeRyuhane/LLM-Gateway/is
 
 ```mermaid
 flowchart LR
-    User["User or agent"] --> App["Trusted application"]
-    App -->|"OpenAI-compatible data plane"| Gateway["Adaptive LLM Gateway"]
-    Operator["Operator"] -->|"Versioned control API"| Gateway
+    User["User"] --> Compat["Gateway-unaware client, for example SillyTavern"]
+    User --> Reference["Gateway-aware reference application"]
+    Agent["Agent or service"] --> App["Trusted application"]
+    Compat -->|"OpenAI-compatible data plane"| Gateway["Adaptive LLM Gateway"]
+    Reference -->|"Data plane with optional extensions"| Gateway
+    App -->|"OpenAI-compatible data plane"| Gateway
+    Operator["Operator"] --> Dashboard["Operator dashboard"]
+    Dashboard -->|"Versioned control API only"| Gateway
     Gateway -->|"Provider adapter"| P1["Provider route A"]
     Gateway -->|"Provider adapter"| P2["Provider route B"]
     Gateway --> DB[(PostgreSQL)]
     Gateway --> Collector["OpenTelemetry Collector"]
     Collector --> Obs["Metrics, traces, and logs backends"]
-    Dashboard["Operator dashboard"] -->|"Control API only"| Gateway
 ```
 
 The gateway is a modular monolith: data plane, control plane, routing, health,
@@ -52,6 +56,22 @@ Control-plane unavailability may prevent configuration changes and rich queries,
 but should not automatically interrupt an already configured data plane. The
 exact cached-read behavior is deferred until measured availability requirements
 justify it.
+
+## Frontend surfaces
+
+The `frontend/` workspace contains two applications with separate permissions:
+
+- `frontend/apps/reference` is a gateway-aware reference integration. It uses
+  the data plane and its optional extensions to demonstrate conversation/run
+  identity, model groups, routing outcomes, cancellation, usage, and latency.
+- `frontend/apps/dashboard` is the operator interface. It uses only the control
+  API and cannot become a shortcut around control-plane authorization or audit.
+
+The applications may share presentation components and generated API types, but
+they do not share credentials or authorization assumptions. Browser assets must
+not embed long-lived application or provider credentials; the reference
+application's backend-for-frontend or short-lived credential mechanism is
+defined by the security contract.
 
 ## Backend package boundaries
 
