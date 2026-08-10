@@ -326,9 +326,13 @@ fail readiness before it can accept data-plane or bootstrap work.
   maximum JSON nesting depth of 8, 64 claims, and 4 KiB per string claim. Only
   configured algorithms and pre-registered verification keys are considered.
 - Request-time verification performs no DNS, HTTP, JWKS, schema, provider, or
-  other remote fetch. It uses only bounded local caches and the configured
-  credential store; required keys and metadata are refreshed out of band before
-  they become eligible for verification.
+  other remote fetch. The credential store exposed to the request path is an
+  immutable process-local snapshot of at most 10,000 active verifier records.
+  Verification performs one keyed-digest-indexed lookup with a 5 ms deadline
+  and fails closed on a miss, stale snapshot, or deadline; it never
+  falls back to database, filesystem, or network access. A separate bounded
+  refresh worker loads required keys and metadata out of band and atomically
+  replaces the snapshot before those values become eligible for verification.
 
 All limit failures return the same bounded authentication failure shape and emit
 only rate-limited, cardinality-bounded evidence. Implementations may choose lower
@@ -370,7 +374,7 @@ threat-model revision and abuse-test update.
 | `SEC-LOG-001` Routine signals and errors contain no prohibited data | Canary-secret tests inspect logs, traces, metrics, audit, notifications, and client responses |
 | `SEC-AUDIT-001` Security lifecycle and administrative mutations are attributable | Integration tests require actor, target, action, result, time, and correlation fields |
 | `SEC-BROWSER-001` Browser artifacts contain no long-lived gateway or provider credential | Built-asset scans and BFF integration tests inspect storage, responses, and outbound calls |
-| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, sole-instance concurrency, cache-entry/TTL, and bootstrap limit; deployment tests prove a second instance cannot become ready; instrumented resolvers/transports prove zero request-time remote fetches and bounded work under randomized invalid input |
+| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, sole-instance concurrency, cache-entry/TTL, snapshot-entry, lookup-deadline, and bootstrap limit; miss/stale/deadline fixtures fail closed while instrumented database, filesystem, resolver, and transport fakes prove zero request-time external access; deployment tests prove a second instance cannot become ready and randomized invalid input performs bounded work |
 
 Security-sensitive requirements block the dependent implementation issue until
 their corresponding test fixture exists. Exceptions require a linked decision,
