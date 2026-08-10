@@ -1,0 +1,52 @@
+{
+  "contract_version": "gateway.adapter.v0",
+  "capability": "tools.function_schema_strict",
+  "distinct_from": "structured.json_schema_strict",
+  "cases": [
+    {
+      "name": "supported-preserves-function-schema-strictness",
+      "route_state": "supported",
+      "canonical_request": {
+        "tools": [
+          {
+            "name": "lookup",
+            "parameters": { "type": "object", "additionalProperties": false },
+            "strict": true
+          }
+        ]
+      },
+      "expected": {
+        "eligible": true,
+        "preserved": { "tools[0].strict": true }
+      }
+    },
+    {
+      "name": "unsupported-rejects-before-dispatch",
+      "route_state": "unsupported",
+      "required_value": true,
+      "expected": {
+        "eligible": false,
+        "dispatched": false,
+        "failure": {
+          "code": "capability.unsupported",
+          "domain": "capability",
+          "retry_disposition": "never"
+        }
+      }
+    },
+    {
+      "name": "unverified-rejects-before-dispatch",
+      "route_state": "unverified",
+      "required_value": true,
+      "expected": {
+        "eligible": false,
+        "dispatched": false,
+        "failure": {
+          "code": "capability.unsupported",
+          "domain": "capability",
+          "retry_disposition": "never"
+        }
+      }
+    }
+  ]
+}

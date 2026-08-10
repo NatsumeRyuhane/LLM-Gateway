@@ -81,6 +81,7 @@ CanonicalMessage
   role        developer | system | user | assistant | tool
   name        optional bounded participant name
   content[]   zero or more text parts in v0
+  refusal     optional assistant refusal text in output
   tool_calls[] assistant function calls, when present in history
   tool_call_id required for tool-role messages
 ```
@@ -92,6 +93,13 @@ content parts are deferred and rejected in v0.
 
 The public string form and an array containing only `{type: "text", text: ...}`
 normalize to the same canonical text parts. No other coercion is allowed.
+
+Adapters preserve `refusal` separately from `content`; they never convert one
+to the other. Buffered provider refusal text maps directly to
+`CanonicalMessage.refusal`. In streaming responses, ordered `refusal.delta`
+values append only to that field, while `output_text.delta` values append only
+to `content`. Refusal in request history remains deferred in v0 and is rejected
+before canonical request construction.
 
 ### Function tools
 
@@ -182,8 +190,11 @@ RouteCapabilities
   endpoint.chat_completions.buffered
   endpoint.chat_completions.streaming
   message.roles.{developer,system,user,assistant,tool}
+  message.participant_name
+  message.refusal_output
   content.text
   tools.function
+  tools.function_schema_strict
   tools.choice.{none,auto,required,specific}
   tools.parallel
   structured.{json_object,json_schema,json_schema_strict,streaming}
@@ -221,6 +232,10 @@ The v0 response contains exactly one choice. The message may contain text,
 refusal text, or one or more complete function tool calls. `finish_reason` is one
 of `stop`, `length`, `tool_calls`, or `content_filter`; an unknown provider reason
 is a protocol error until explicitly mapped by the adapter contract.
+
+The buffered public codec serializes `CanonicalMessage.refusal` as
+`choices[0].message.refusal` and keeps normal text in
+`choices[0].message.content`. It does not concatenate refusal and content.
 
 Buffered provider responses are fully parsed and validated before the public
 status and body are committed. A failure before that boundary may be eligible for
@@ -285,6 +300,9 @@ prepared
 - `response.started` occurs exactly once and moves `prepared -> started`.
 - The first delta or tool-call event moves `started -> active`.
 - `output_text.delta` and `refusal.delta` contain non-empty ordered UTF-8 text.
+- The public stream codec serializes those events as distinct `content` and
+  `refusal` deltas; their accumulated values map to the corresponding buffered
+  `CanonicalMessage` fields without cross-field coercion.
 - Each tool-call index receives exactly one `tool_call.started`, zero or more
   ordered argument deltas, and exactly one `tool_call.completed`.
 - `usage.updated` is optional, monotonic, and cannot reduce a prior count.
@@ -331,7 +349,7 @@ never mixes bytes from another attempt.
 ```text
 CanonicalError
   code                 stable failure-taxonomy code
-  domain               client | auth | policy | gateway | storage | upstream | protocol
+  domain               client | auth | quota | policy | capability | affinity | gateway | storage | telemetry | upstream | protocol
   retry_disposition    never | pre_output_alternate | pre_output_same_or_alternate | client_decides
   safe_message
   http_status
@@ -452,6 +470,17 @@ Fixtures store provider wire input/output, expected canonical values/events,
 expected failure code/domain/disposition, visibility state, cleanup assertions,
 and contract version. A capability is not production-eligible until its fixture
 passes under race detection where concurrency is involved.
+
+The initial capability-selection manifests are versioned with this contract:
+
+| Capability | Fixture | Required assertions |
+| --- | --- | --- |
+| `message.participant_name` | `tests/conformance/gateway.adapter.v0/capabilities/message-participant-name.json` | A supported route preserves the bounded name; unsupported and unverified routes reject before dispatch |
+| `tools.function_schema_strict` | `tests/conformance/gateway.adapter.v0/capabilities/tools-function-schema-strict.json` | A supported route preserves function-tool `strict: true`; unsupported and unverified routes reject before dispatch |
+
+`tools.function_schema_strict` applies only to strict function-tool parameter
+schemas. It is independent of `structured.json_schema_strict`, which applies to
+the requested response format; a request using both requires both capabilities.
 
 ## Normative references
 
