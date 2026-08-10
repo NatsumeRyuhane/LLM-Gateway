@@ -1,6 +1,6 @@
 # Reliability indicators and availability contract
 
-Status: M0 draft for [issue #4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4)
+Status: Accepted for M0 under [issue #4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4)
 
 ## Availability boundaries
 
@@ -25,15 +25,48 @@ For a measurement window `W`:
 - `valid_offered`: received requests with valid syntax, an accepted gateway
   credential, sufficient gateway quota, a visible requested target, and a client
   deadline that permits admission.
+- `admitted`: valid offered requests accepted into the bounded data-plane work
+  budget.
 - `routed`: valid offered requests for which candidate evaluation begins.
+- `upstream_attempted`: requests for which at least one upstream attempt starts.
 - `started_stream`: routed streaming requests for which success headers/model
   events are committed to the client.
-- `client_cancelled`: requests terminated by a downstream cancellation before a
-  gateway/provider terminal outcome.
+- `valid_terminal_responses`: buffered responses that validate completely plus
+  streams whose required canonical terminal event validates.
+- `client_cancelled_before_terminal`: requests terminated by downstream
+  cancellation before any gateway/provider terminal outcome.
+- `client_cancelled_after_start`: started streams terminated by downstream
+  cancellation before a canonical terminal event.
+- `ordinary`: non-probe requests admitted from normal client traffic.
+- `probe`: requests carrying the gateway's synthetic-traffic marker from
+  admission through attempt and accounting records.
 
 Every exclusion remains countable in a separate bounded failure dimension.
 Requests do not disappear from all reports merely because they are excluded from
 one SLI.
+
+## Measurement conventions
+
+Each request or attempt records monotonic timestamps for `received`, `admitted`,
+`attempt_start`, `first_model_event`, every subsequent model event, and
+`terminal`. Wall-clock timestamps remain available for correlation, but elapsed
+durations use the monotonic component.
+
+Unless a definition overrides them, every SLI:
+
+- is calculated over a stated half-open window `W = [start, end)` using the
+  request admission timestamp;
+- reports ordinary and probe traffic separately and excludes probes from passive
+  workload views;
+- is dimensioned by buffered/streaming mode, requested model group, selected
+  route/provider, required capability class, terminal failure domain/code, and
+  usage provenance where applicable;
+- uses bounded request-shape buckets rather than prompt, user, request, or run
+  identifiers;
+- counts missing or corrupt required measurement fields as telemetry defects
+  rather than silently dropping them.
+
+For a ratio, an empty denominator produces `no_data`, not 0% or 100%.
 
 ## Initial SLIs
 
@@ -90,42 +123,101 @@ ordering inputs, selected route, and all attempts.
 ### Retry amplification
 
 ```text
-total_upstream_attempts(W) / requests_with_an_upstream_attempt(W)
+ordinary_upstream_attempts(W) /
+  ordinary_requests_with_an_upstream_attempt(W)
 ```
 
-Segment by outcome and routing policy. This measure exposes retry storms and the
-cost hidden by a superficially improved completion rate.
+Probe amplification is reported separately. Segment by terminal outcome,
+routing policy version, retry reason, and ordered attempt count. Preserve the
+route sequence for traces and decision records, but never use that unbounded
+sequence as a metric label. This measure exposes retry storms and the cost hidden
+by a superficially improved completion rate.
 
 ### Gateway dispatch latency
 
-Time from admitted request to the start of the first upstream attempt. Report
-p50, p95, and p99 by buffered/streaming and required capability class. This
-isolates gateway decision overhead from provider time to first token.
+For each `upstream_attempted` request `r`:
+
+```text
+dispatch_latency(r) = attempt_start(r, 1) - admitted(r)
+```
+
+Report p50, p95, and p99 over ordinary requests in `W`, dimensioned by
+buffered/streaming mode, requested model group, and required capability class.
+Requests that terminate before an upstream attempt are excluded from the
+distribution and reported by terminal code. This isolates gateway decision
+overhead from provider time to first model event.
 
 ### End-to-end latency
 
-- Time to first model event for streaming requests.
-- Time to valid terminal response.
-- Inter-event latency and output throughput where event timestamps permit it.
+For a streaming request `r` with at least one client-visible model event:
+
+```text
+time_to_first_model_event(r) = first_model_event(r) - received(r)
+```
+
+For any request with a gateway/provider terminal outcome:
+
+```text
+terminal_latency(r) = terminal(r) - received(r)
+```
+
+For consecutive client-visible model events `e[i-1]` and `e[i]`, `i >= 2`:
+
+```text
+inter_event_latency(r, i) = timestamp(e[i]) - timestamp(e[i-1])
+```
+
+Do not label inter-event latency as inter-token latency: providers may batch
+multiple tokens into one event. When trustworthy provider-reported output tokens
+exist, aggregate generation throughput for a population `P` is:
+
+```text
+generation_throughput(P, W) =
+  sum(output_tokens(r), r in P and W) /
+  sum(terminal(r) - first_model_event(r), r in P and W)
+```
+
+The denominator is expressed in seconds. Estimated-token throughput is a
+separate series marked `usage_provenance=estimated`; it is never mixed with
+provider-reported tokens.
 
 Report p50, p95, and p99 by request-shape buckets. Provider comparisons must not
 mix materially different input/output length, tool, schema, modality, or context
-classes.
+classes. TTFT excludes streams with no model event; terminal latency retains both
+successful and failed outcomes as a dimension; throughput includes only
+canonically completed streams with positive generation duration.
 
 ### Incident response indicators
 
-- **Time to detect:** labeled incident start to the first qualifying health-state
-  transition.
-- **Time to divert:** labeled incident start to the last ordinary request sent to
-  the affected route, excluding explicit probes and allowed in-flight affinity.
-- **Time to recover:** labeled recovery start to the first state that permits the
-  defined level of production traffic.
-- **Failure exposure:** ordinary requests sent to the affected route after the
-  labeled incident start.
-- **False degradation:** degradation transitions without a labeled/confirmed
-  material failure, reported per route-hour.
-- **Missed degradation:** labeled incidents that never produce the required
-  transition within the evaluation window.
+For labeled incident `i` on route `r`:
+
+```text
+time_to_detect(i) = first_qualifying_degraded_transition(i) - incident_start(i)
+
+time_to_divert(i) =
+  max(0, last_ordinary_attempt_start_on_route(i) - incident_start(i))
+
+time_to_recover(i) =
+  first_qualifying_recovered_transition(i) - recovery_start(i)
+
+failure_exposure(i) = count(
+  ordinary attempt starts on route r after incident_start(i)
+  and before the qualifying diverted/recovered boundary
+)
+
+false_degradation_rate(r, W) =
+  uncorroborated_degraded_transitions(r, W) / observed_route_hours(r, W)
+
+missed_degradation_ratio(W) =
+  labeled_incidents_without_transition_by_deadline(W) /
+  labeled_incidents_eligible_for_evaluation(W)
+```
+
+Time to detect is `no_data` for a missed degradation. Time to divert is zero when
+no ordinary attempt starts after the incident boundary. Explicit probes and
+documented in-flight affinity are excluded from diversion and exposure, then
+reported separately. Dimension the results by route/provider, incident class,
+detector version, evidence source, and synthetic/live origin.
 
 Synthetic experiments use the injector's monotonic timestamp as the incident
 boundary. Live incidents use the earliest corroborated observation recorded in
@@ -133,9 +225,26 @@ the incident timeline; retrospective changes must be audited.
 
 ### Probe overhead
 
-Report probe requests, input/output tokens, estimated currency cost, provider
-rate-limit share, and fraction of total gateway traffic per route. Probe traffic
-is excluded from passive workload SLIs.
+For each route `r`:
+
+```text
+probe_request_share(r, W) =
+  probe_attempts(r, W) / all_upstream_attempts(r, W)
+
+probe_token_share(r, W) =
+  probe_input_output_tokens(r, W) / all_input_output_tokens(r, W)
+
+probe_cost_share(r, W) =
+  estimated_probe_cost(r, W) / estimated_total_cost(r, W)
+
+probe_rate_limit_share(r, W) =
+  provider_rate_limit_units_used_by_probes(r, W) /
+  configured_or_observed_provider_rate_limit_units(r, W)
+```
+
+Also report absolute probe requests, tokens, cost, and failures. Token and cost
+shares are `no_data` when their denominator is unknown; reported and estimated
+usage remain separate. Probe traffic is excluded from passive workload SLIs.
 
 ## Correctness objectives
 
@@ -183,3 +292,21 @@ consume a client-completion or route-availability budget.
 Correctness-invariant violations bypass ordinary budget calculations and require
 an incident review. Alerting must identify the failed boundary so an operator can
 distinguish gateway remediation from route diversion or provider escalation.
+
+## Comparative implementation reference
+
+The M0 review examined QuantumNous/new-api at commit `9c97e78a`, specifically
+its [relay retry loop](https://github.com/QuantumNous/new-api/blob/9c97e78aced572d540f227007a675d7d007666ac/controller/relay.go),
+[bounded stream end reasons](https://github.com/QuantumNous/new-api/blob/9c97e78aced572d540f227007a675d7d007666ac/relay/common/stream_status.go),
+[performance aggregation](https://github.com/QuantumNous/new-api/blob/9c97e78aced572d540f227007a675d7d007666ac/pkg/perf_metrics/metrics.go),
+and [scheduled channel tests](https://github.com/QuantumNous/new-api/blob/9c97e78aced572d540f227007a675d7d007666ac/controller/channel-test.go).
+The useful patterns are explicit attempt history, separate TTFT/generation
+timing, bounded stream termination evidence, and active route checks. This
+contract intentionally differs in three places:
+
+- semantic failure codes remain authoritative over configurable HTTP-status
+  ranges;
+- a clean transport EOF is not canonical stream completion;
+- active probe outcomes remain separate from passive availability evidence.
+
+The external implementation is comparative evidence, not a normative dependency.
