@@ -223,6 +223,6 @@ issue or ADR records the outcome.
 - Protocol: [canonical protocol and provider-adapter contract](protocol.md) and
   [v0 compatibility matrix](compatibility-matrix.md)
 - Security: [identity, credential, and endpoint threat model](threat-model.md)
-- Observability: [observability, privacy, and cardinality contract, issue
-  #8](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/8)
+- Observability: [observability, privacy, and cardinality
+  contract](observability.md)
 - [M0 work tracker](TODO.md)
