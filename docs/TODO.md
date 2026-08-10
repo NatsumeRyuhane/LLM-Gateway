@@ -11,7 +11,7 @@ backlog.
 | [#1](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/1) | V0 product contract and safety invariants | Complete on foundation branch; pending merge |
 | [#2](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/2) | Repository governance and CI quality contract | Stable CI jobs, importable ruleset, templates, dependency policy, and activation tooling implemented; ruleset activation awaits the first PR check run |
 | [#3](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/3) | Foundational architecture decisions | Complete in contract pack |
-| [#4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4) | Failure taxonomy, SLIs, and availability contract | Implemented on foundation branch; awaiting review |
+| [#4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4) | Failure taxonomy, SLIs, and availability contract | Accepted on reliability branch; pending review |
 | [#5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5) | Identity, credential, and endpoint threat model | Queued |
 | [#6](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/6) | Canonical protocol and provider-adapter contract | Queued |
 | [#7](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/7) | Deterministic mock-provider and fault matrix | Queued |

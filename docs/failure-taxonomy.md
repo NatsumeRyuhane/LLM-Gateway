@@ -1,6 +1,6 @@
 # Failure taxonomy
 
-Status: M0 draft for [issue #4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4)
+Status: Accepted for M0 under [issue #4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4)
 
 ## Purpose
 
@@ -14,8 +14,10 @@ Every failed attempt records:
 - one stable failure `code` from this document;
 - the `domain` responsible for classification, not necessarily moral blame;
 - whether client-visible output or an actionable tool call may have occurred;
-- retry disposition and remaining retry budget;
+- its attempt index, bounded stream-end reason when applicable, retry disposition,
+  retry decision reason, and remaining retry budget;
 - provider and route identifiers in the decision/attempt record;
+- links to the preceding attempt and final request-level classification;
 - a redacted internal cause chain for operators;
 - a stable, non-secret client-facing error type and message.
 
@@ -51,6 +53,47 @@ A request crosses the automatic-retry boundary when any of these occurs:
 HTTP headers that contain only gateway metadata do not themselves expose model
 output, but implementations should delay committing a success response until an
 upstream attempt is accepted. Ambiguity is resolved toward `client_decides`.
+
+## Stream end reasons
+
+Streaming attempts record one bounded `stream_end_reason` independently from the
+request's failure code. Transport termination and protocol completion are not
+synonyms.
+
+| Reason | Meaning | Completion implication |
+| --- | --- | --- |
+| `canonical_terminal` | A terminal event required by the canonical protocol was validated | Eligible for stream-completion success |
+| `client_cancelled` | The downstream context ended or the client disconnected | Excluded only from the cancellation-defined populations |
+| `deadline` | The request or attempt deadline elapsed | Failure; classify the responsible deadline domain separately |
+| `idle_timeout` | The inter-event deadline elapsed | Failure; never canonical completion |
+| `transport_eof` | The upstream body ended without another transport error | Failure unless a canonical terminal event was already validated |
+| `scanner_error` | The stream reader or framing scanner failed | Failure |
+| `handler_stop` | Protocol handling stopped intentionally | Success only when caused by a validated canonical terminal event |
+| `downstream_write_failed` | A client write or flush failed | Normally client-caused; retain whether output was visible |
+| `panic` | Stream processing panicked | Gateway-owned correctness failure |
+
+A bare EOF, handler return, or clean socket close never proves successful stream
+completion. This prevents transport-level normality from hiding truncated model
+output.
+
+## Classification domains and client messages
+
+Every stable code inherits a classification domain and client-message policy
+from its namespace. Provider text is evidence, not a client-safe message.
+
+| Namespace | Classification domain | Client-safe message policy |
+| --- | --- | --- |
+| `client.*` | Caller request or downstream lifecycle | State the invalid field, bound, cancellation, or deadline without echoing content |
+| `auth.*` | Gateway authentication or authorization | Use a generic missing, invalid, or forbidden credential message; never identify secrets or hidden resources |
+| `quota.*` | Gateway-owned quota policy | State that the applicable gateway quota is exhausted without exposing other subjects or balances |
+| `policy.*` | Gateway routing policy and current eligibility evidence | State that the target or an eligible route is unavailable; do not reveal private routes or policy internals |
+| `capability.*` | Canonical-to-provider compatibility | Name the unsupported public capability without silently approximating it |
+| `affinity.*` | Affinity evaluation | Do not emit a terminal client error unless later policy evaluation also fails |
+| `gateway.*` | Gateway process or implementation | Use a generic unavailable/internal message plus correlation ID |
+| `storage.*` | Required gateway durable state | Use a generic temporarily unavailable message; never expose schema, SQL, or topology |
+| `telemetry.*` | Observability delivery | Do not alter an otherwise valid model response |
+| `upstream.*` | Provider route, transport, account, or provider policy | Use a normalized upstream-unavailable, limited, or policy message; redact provider bodies, credentials, and endpoints |
+| `protocol.*` | Provider-adapter conformance | State that the upstream response was invalid or incomplete; do not return malformed fragments |
 
 ## Stable failure classes
 
