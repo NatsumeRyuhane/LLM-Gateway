@@ -122,6 +122,31 @@ func TestServerForcesCloseWhenGracefulShutdownExpires(t *testing.T) {
 	_ = waitForError(t, clientDone, "client completion")
 }
 
+func TestServerClosesListenerWhenRestartIsRejected(t *testing.T) {
+	t.Parallel()
+
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("ListenConfig.Listen() error = %v", err)
+	}
+
+	server := NewServer("test", config.GatewayHTTPDefaults(), nil, nil, discardLogger())
+	server.running.Store(true)
+	if err := server.Serve(t.Context(), listener); err == nil {
+		t.Fatal("Serve() error = nil, want restart rejection")
+	}
+
+	connection, err := listener.Accept()
+	if err == nil {
+		_ = connection.Close()
+		t.Fatal("Accept() error = nil, want closed listener")
+	}
+	if !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("Accept() error = %v, want net.ErrClosed", err)
+	}
+}
+
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }

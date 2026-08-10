@@ -85,6 +85,9 @@ func (s *Server) Run(ctx context.Context) error {
 // connections so process termination stays bounded.
 func (s *Server) Serve(ctx context.Context, listener net.Listener) error {
 	if !s.running.CompareAndSwap(false, true) {
+		if err := listener.Close(); err != nil {
+			return fmt.Errorf("%s HTTP server has already been started; close rejected listener: %w", s.name, err)
+		}
 		return fmt.Errorf("%s HTTP server has already been started", s.name)
 	}
 
