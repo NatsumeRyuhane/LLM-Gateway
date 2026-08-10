@@ -8,7 +8,7 @@ backlog.
 
 | Issue | Deliverable | Status |
 | --- | --- | --- |
-| [#1](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/1) | V0 product contract and safety invariants | Implemented on foundation branch; awaiting review |
+| [#1](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/1) | V0 product contract and safety invariants | Complete on foundation branch; pending merge |
 | [#2](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/2) | Repository governance and CI quality contract | Templates, shared live-context entrypoint, and repository policy CI implemented; language jobs and branch protection pending |
 | [#3](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/3) | Foundational architecture decisions | Implemented on foundation branch; awaiting review |
 | [#4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4) | Failure taxonomy, SLIs, and availability contract | Implemented on foundation branch; awaiting review |

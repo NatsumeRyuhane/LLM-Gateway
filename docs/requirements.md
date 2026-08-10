@@ -168,6 +168,25 @@ between them.
 - Compare static, ordered-fallback, and health-aware affinity policies on the
   same reproducible workloads.
 
+## Failure boundaries
+
+- A **gateway product failure** occurs when the gateway fails to honor its own
+  contract for an admitted request. This includes gateway-owned internal or
+  required-storage failures and violations such as unsafe replay, mixed-attempt
+  output, corrupted downstream streaming, or lost cancellation.
+- An **upstream failure** occurs when a provider route fails at the transport,
+  HTTP, or provider-protocol boundary after dispatch. The gateway must classify
+  and surface it correctly, but it is not a gateway-service availability failure.
+- An **unsupported capability** occurs when no eligible route can preserve a
+  required request semantic. The gateway rejects it explicitly rather than
+  dropping or approximating the feature; the rejection is neither a gateway
+  product failure nor an upstream attempt failure.
+
+These boundaries can produce different measurements for gateway-service
+availability, routing availability, and client-perceived completion. Their
+stable codes and SLI populations are defined by the related reliability
+contracts.
+
 ## Non-goals for the first release
 
 - Training or fine-tuning models.
@@ -199,5 +218,12 @@ issue or ADR records the outcome.
 - [Architecture](architecture.md)
 - [ADR 0001: Go for the gateway](adr/0001-go-for-gateway.md)
 - [ADR 0002: modular monolith](adr/0002-modular-monolith.md)
-- Reliability, protocol, security, and observability documents are tracked in
-  [the M0 work list](TODO.md).
+- Reliability: [failure taxonomy](failure-taxonomy.md) and
+  [reliability indicators and availability contract](slo.md)
+- Protocol: [canonical protocol and provider-adapter contract, issue
+  #6](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/6)
+- Security: [identity, credential, and endpoint threat model, issue
+  #5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5)
+- Observability: [observability, privacy, and cardinality contract, issue
+  #8](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/8)
+- [M0 work tracker](TODO.md)
