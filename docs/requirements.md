@@ -113,8 +113,21 @@ actions belong to a separate versioned control API.
   one or more application subjects using approved evidence.
 - **Attempt:** one request to one provider route. A client request can have more
   than one attempt only within its retry-safety boundary and budget.
-- **Conversation/run affinity:** a preference to retain a previously selected
-  route while it remains eligible and sufficiently healthy.
+- **Conversation:** an application-defined, application-scoped opaque identifier
+  that groups related inference requests. The gateway does not infer conversation
+  boundaries from request content.
+- **Run:** an application-defined, application-scoped opaque identifier for one
+  agent or service execution. A run may span multiple inference requests and
+  tool calls.
+- **Conversation/run affinity:** a routing preference that retains the previously
+  selected provider route for subsequent requests in the same conversation or
+  run while that route remains eligible and sufficiently healthy. Affinity does
+  not override hard policy or capability constraints and does not guarantee that
+  the route will be retained.
+
+Conversation and run are independent, optional attribution dimensions in v0. An
+application may supply either or both, and the gateway imposes no hierarchy
+between them.
 
 ## V0 safety invariants
 
