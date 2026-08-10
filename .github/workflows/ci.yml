@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Record pending backend scaffold
         if: ${{ hashFiles('backend/go.mod') == '' }}
         run: |
@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Record pending frontend scaffold
         if: ${{ hashFiles('frontend/package.json') == '' }}
         run: echo "::notice::frontend/package.json is not present; frontend checks activate with the frontend scaffold."
@@ -63,7 +63,7 @@ jobs:
           grep -q '"packageManager"' frontend/package.json
       - name: Set up pinned Node.js toolchain
         if: ${{ hashFiles('frontend/package.json') != '' }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version-file: frontend/.node-version
           package-manager-cache: false
@@ -102,7 +102,7 @@ jobs:
           --health-retries 10
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Record pending integration harness
         if: ${{ hashFiles('tests/integration/run.sh') == '' }}
         run: echo "::notice::tests/integration/run.sh is not present; the PostgreSQL and deterministic-provider contract is reserved."
@@ -123,7 +123,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Check repository security policy
         run: bash scripts/ci/security.sh
       - name: Set up pinned Go toolchain
@@ -137,7 +137,7 @@ jobs:
         run: go tool govulncheck ./...
       - name: Set up pinned Node.js toolchain
         if: ${{ hashFiles('frontend/package.json') != '' }}
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version-file: frontend/.node-version
           package-manager-cache: false
@@ -154,6 +154,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Build tracked deployment containers
         run: bash scripts/ci/container.sh
