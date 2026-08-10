@@ -106,6 +106,34 @@ infrastructure packages -> domain interfaces and models
 Interfaces are defined by the consuming package and kept narrow. Shared utility
 packages are avoided unless at least two stable consumers need the same concept.
 
+The initial scaffold materializes every boundary above in the single
+`backend/` module. `app`, `config`, and `health` contain the first runtime
+behavior; the remaining packages start as documented boundaries until their
+vertical-slice behavior lands. `cmd/gateway` and `cmd/mock-provider` both use
+the shared lifecycle, but production packages do not import the mock-provider
+command. Issue #7 still owns deterministic response profiles, fault injection,
+and the guarded test-only control surface.
+
+| Scaffold package | Initial responsibility |
+| --- | --- |
+| `config` | Load bounded HTTP settings, validate before bind, and return errors that identify keys without echoing values |
+| `health` | Keep liveness independent from atomic process readiness; route-health evidence remains a later addition |
+| `app` | Own the listener, standard-library HTTP server, serving goroutine, readiness transitions, and bounded shutdown |
+
+### Process lifecycle
+
+Both binaries load and validate configuration before binding a loopback listener
+by default. After the listener is owned, the process becomes ready and serves
+`GET /livez` and `GET /readyz`. `SIGINT` or `SIGTERM` withdraws readiness before
+the listener drains. Active requests receive the configured graceful-shutdown
+window; expiry force-closes remaining connections. The lifecycle owner always
+joins its serving goroutine before returning.
+
+Liveness answers whether the running process can serve HTTP. Readiness answers
+whether it should receive new work, so it is false during startup and shutdown.
+This process-level readiness is deliberately separate from future provider-route
+health, where missing or stale evidence remains `unknown`.
+
 ## Storage boundaries
 
 PostgreSQL is the initial source of truth for configuration, identities,

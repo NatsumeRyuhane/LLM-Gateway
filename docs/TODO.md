@@ -14,9 +14,9 @@ backlog.
 | [#4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4) | Failure taxonomy, SLIs, and availability contract | Complete in contract pack |
 | [#5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5) | Identity, credential, and endpoint threat model | Complete in contract pack |
 | [#6](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/6) | Canonical protocol and provider-adapter contract | Complete in contract pack |
-| [#7](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/7) | Deterministic mock-provider and fault matrix | Queued |
+| [#7](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/7) | Deterministic mock-provider and fault matrix | Deferred; #9 provides the health-only process that later fault tests will extend |
 | [#8](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/8) | Observability, privacy, and cardinality contract | Complete in contract pack |
-| [#9](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/9) | Go modular-monolith backend scaffold | Blocked on contracts and local Go toolchain |
+| [#9](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/9) | Go modular-monolith backend scaffold | Implemented with two commands, explicit package boundaries, bounded lifecycle, health semantics, and CI checks |
 
 ## Later milestones
 
