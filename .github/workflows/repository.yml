@@ -1,0 +1,57 @@
+name: Repository
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  policy:
+    name: policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Check whitespace
+        shell: bash
+        run: |
+          empty_tree="$(git hash-object -t tree /dev/null)"
+          git diff --check "$empty_tree" HEAD
+      - name: Require foundation documents
+        shell: bash
+        run: |
+          required=(
+            README.md
+            CONTRIBUTING.md
+            docs/TODO.md
+            docs/requirements.md
+            docs/architecture.md
+          )
+          for path in "${required[@]}"; do
+            test -s "$path" || {
+              echo "required non-empty file is missing: $path" >&2
+              exit 1
+            }
+          done
+      - name: Check shared agent context
+        shell: bash
+        run: |
+          test -L .claude
+          test "$(readlink .claude)" = ".agents"
+          required_context=(
+            .agents/AGENTS.md
+            .agents/CLAUDE.md
+            .agents/README.md
+          )
+          for context_file in "${required_context[@]}"; do
+            test -e "$context_file" || {
+              echo "required agent context is missing: $context_file" >&2
+              exit 1
+            }
+          done
