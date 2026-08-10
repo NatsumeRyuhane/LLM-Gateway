@@ -1,0 +1,50 @@
+name: Feature proposal
+description: Propose a user-visible capability before decomposing its engineering work.
+title: ""
+labels:
+  - type:feature
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user
+      description: Who is affected, what are they trying to do, and what evidence shows the problem matters?
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Observable outcome
+      description: Describe behavior a user or operator can observe without prescribing an implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: State the smallest useful slice and what is deliberately excluded.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Reliability, privacy, and failure considerations
+      description: Cover fallback boundaries, partial output, credentials/content, degraded behavior, and rollback.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Acceptance and exit evidence
+      description: List testable outcomes and the demo, trace, benchmark, or other evidence that will prove them.
+      placeholder: |
+        - [ ] A user can...
+        - [ ] Failure evidence shows...
+        - [ ] Documentation is updated...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and open decisions
+      description: Link contracts, ADRs, experiments, blocking issues, and unresolved product choices.
