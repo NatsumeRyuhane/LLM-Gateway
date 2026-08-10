@@ -481,6 +481,9 @@ The initial capability-selection manifests are versioned with this contract:
 `tools.function_schema_strict` applies only to strict function-tool parameter
 schemas. It is independent of `structured.json_schema_strict`, which applies to
 the requested response format; a request using both requires both capabilities.
+The function-strict manifest includes combined cases that permit dispatch only
+when both states are `supported` and reject before dispatch when either state is
+`unsupported` or `unverified`.
 
 ## Normative references
 

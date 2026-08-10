@@ -47,6 +47,116 @@
           "retry_disposition": "never"
         }
       }
+    },
+    {
+      "name": "combined-strictness-requires-both-supported",
+      "route_states": {
+        "tools.function_schema_strict": "supported",
+        "structured.json_schema_strict": "supported"
+      },
+      "canonical_request": {
+        "tools": [
+          {
+            "name": "lookup",
+            "parameters": { "type": "object", "additionalProperties": false },
+            "strict": true
+          }
+        ],
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "schema": { "type": "object", "additionalProperties": false },
+            "strict": true
+          }
+        }
+      },
+      "expected": {
+        "eligible": true,
+        "required_capabilities": [
+          "tools.function_schema_strict",
+          "structured.json_schema_strict"
+        ]
+      }
+    },
+    {
+      "name": "combined-strictness-rejects-unsupported-function-strictness",
+      "route_states": {
+        "tools.function_schema_strict": "unsupported",
+        "structured.json_schema_strict": "supported"
+      },
+      "required_values": {
+        "tools[0].strict": true,
+        "response_format.json_schema.strict": true
+      },
+      "expected": {
+        "eligible": false,
+        "dispatched": false,
+        "failure": {
+          "code": "capability.unsupported",
+          "domain": "capability",
+          "retry_disposition": "never"
+        }
+      }
+    },
+    {
+      "name": "combined-strictness-rejects-unverified-function-strictness",
+      "route_states": {
+        "tools.function_schema_strict": "unverified",
+        "structured.json_schema_strict": "supported"
+      },
+      "required_values": {
+        "tools[0].strict": true,
+        "response_format.json_schema.strict": true
+      },
+      "expected": {
+        "eligible": false,
+        "dispatched": false,
+        "failure": {
+          "code": "capability.unsupported",
+          "domain": "capability",
+          "retry_disposition": "never"
+        }
+      }
+    },
+    {
+      "name": "combined-strictness-rejects-unsupported-structured-strictness",
+      "route_states": {
+        "tools.function_schema_strict": "supported",
+        "structured.json_schema_strict": "unsupported"
+      },
+      "required_values": {
+        "tools[0].strict": true,
+        "response_format.json_schema.strict": true
+      },
+      "expected": {
+        "eligible": false,
+        "dispatched": false,
+        "failure": {
+          "code": "capability.unsupported",
+          "domain": "capability",
+          "retry_disposition": "never"
+        }
+      }
+    },
+    {
+      "name": "combined-strictness-rejects-unverified-structured-strictness",
+      "route_states": {
+        "tools.function_schema_strict": "supported",
+        "structured.json_schema_strict": "unverified"
+      },
+      "required_values": {
+        "tools[0].strict": true,
+        "response_format.json_schema.strict": true
+      },
+      "expected": {
+        "eligible": false,
+        "dispatched": false,
+        "failure": {
+          "code": "capability.unsupported",
+          "domain": "capability",
+          "retry_disposition": "never"
+        }
+      }
     }
   ]
 }
