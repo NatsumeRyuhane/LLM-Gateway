@@ -38,6 +38,7 @@ jobs:
             docs/governance.md
             docs/requirements.md
             docs/architecture.md
+            docs/threat-model.md
           )
           for path in "${required[@]}"; do
             test -s "$path" || {

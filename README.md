@@ -31,7 +31,9 @@ and observability contracts before implementing automatic failover.
   runbooks.
 
 Start with [the v0 product contract](docs/requirements.md),
-[the architecture](docs/architecture.md), and [the active work tracker](docs/TODO.md).
+[the architecture](docs/architecture.md),
+[the threat model](docs/threat-model.md), and
+[the active work tracker](docs/TODO.md).
 
 Agents should start from [the shared context entrypoint](.agents/README.md), then
 fetch the live GitHub Issue and Notion design. `.claude` points to the same
