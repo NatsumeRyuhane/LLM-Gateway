@@ -9,9 +9,13 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: repository-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  policy:
-    name: policy
+  repository:
+    name: repository
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -30,6 +34,8 @@ jobs:
             README.md
             CONTRIBUTING.md
             docs/TODO.md
+            docs/ci.md
+            docs/governance.md
             docs/requirements.md
             docs/architecture.md
           )
@@ -39,6 +45,22 @@ jobs:
               exit 1
             }
           done
+      - name: Check issue and workflow YAML
+        shell: ruby --disable-gems {0}
+        run: |
+          require "yaml"
+
+          paths = Dir[".github/**/*.yml", ".github/**/*.yaml"].sort
+          paths.each { |path| YAML.parse_file(path) }
+          puts "validated #{paths.length} YAML files"
+      - name: Check generated-file consistency
+        run: bash scripts/ci/verify-generated.sh
+      - name: Check pull request commit messages
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/ci/check-commits.sh "$BASE_SHA" "$HEAD_SHA"
       - name: Check shared agent context
         shell: bash
         run: |
