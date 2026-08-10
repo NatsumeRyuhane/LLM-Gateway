@@ -12,8 +12,9 @@ merge.
 targets the default branch with active enforcement and no bypass actors. It:
 
 - blocks deletion and force pushes;
-- requires linear history and verified signatures;
-- requires a pull request using squash or rebase merge;
+- requires verified signatures without enforcing linear history;
+- requires merge commits so focused, signed commits and the pull-request boundary
+  remain visible in repository history;
 - requires all review conversations to be resolved;
 - requires the stable `repository`, `backend`, `frontend`, `integration`,
   `security`, and `container` checks against the latest base;
@@ -22,6 +23,11 @@ targets the default branch with active enforcement and no bypass actors. It:
 The required `repository` check validates every pull-request commit subject
 against the Conventional Commits contract. This remains a CI policy because the
 repository ruleset API does not accept commit-metadata rules for this repository.
+
+Squash and rebase merges are disabled. A change that contains multiple focused
+commits must retain those commits; a change that should be atomic should be
+authored as one commit before review. Do not trade away reviewed commit structure
+at merge time.
 
 The zero-approval setting is an explicit single-maintainer limitation, not a
 statement that self-review is sufficient. As soon as a qualified independent

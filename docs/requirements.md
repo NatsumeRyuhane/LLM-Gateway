@@ -220,10 +220,9 @@ issue or ADR records the outcome.
 - [ADR 0002: modular monolith](adr/0002-modular-monolith.md)
 - Reliability: [failure taxonomy](failure-taxonomy.md) and
   [reliability indicators and availability contract](slo.md)
-- Protocol: [canonical protocol and provider-adapter contract, issue
-  #6](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/6)
-- Security: [identity, credential, and endpoint threat model, issue
-  #5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5)
-- Observability: [observability, privacy, and cardinality contract, issue
-  #8](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/8)
+- Protocol: [canonical protocol and provider-adapter contract](protocol.md) and
+  [v0 compatibility matrix](compatibility-matrix.md)
+- Security: [identity, credential, and endpoint threat model](threat-model.md)
+- Observability: [observability, privacy, and cardinality
+  contract](observability.md)
 - [M0 work tracker](TODO.md)
