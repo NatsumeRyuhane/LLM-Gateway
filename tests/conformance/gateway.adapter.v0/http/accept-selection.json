@@ -1,0 +1,93 @@
+{
+  "contract_version": "gateway.adapter.v0",
+  "semantic": "http.accept_selection",
+  "cases": [
+    {
+      "name": "omitted-stream-defaults-to-buffered-selection",
+      "accept": "application/json",
+      "expected": { "representation": "application/json" }
+    },
+    {
+      "name": "omitted-accept-allows-buffered-selection",
+      "stream": false,
+      "expected": { "representation": "application/json" }
+    },
+    {
+      "name": "omitted-accept-allows-stream-selection",
+      "stream": true,
+      "expected": { "representation": "text/event-stream" }
+    },
+    {
+      "name": "mixed-exact-ranges-accept-buffered-selection",
+      "stream": false,
+      "accept": "text/event-stream, application/json",
+      "expected": { "representation": "application/json" }
+    },
+    {
+      "name": "mixed-exact-ranges-accept-stream-selection",
+      "stream": true,
+      "accept": "text/event-stream, application/json",
+      "expected": { "representation": "text/event-stream" }
+    },
+    {
+      "name": "quality-does-not-override-stream-selection",
+      "stream": true,
+      "accept": "text/event-stream;q=0.2, application/json;q=1",
+      "expected": { "representation": "text/event-stream" }
+    },
+    {
+      "name": "repeated-exact-ranges-use-highest-quality",
+      "stream": false,
+      "accept": "application/json;q=0, application/json;q=0.4",
+      "expected": { "representation": "application/json" }
+    },
+    {
+      "name": "exact-zero-quality-overrides-positive-wildcard",
+      "stream": true,
+      "accept": "text/event-stream;q=0, text/*;q=1, */*;q=1",
+      "expected": {
+        "dispatched": false,
+        "failure": { "code": "client.invalid_request", "domain": "client" }
+      }
+    },
+    {
+      "name": "type-wildcard-accepts-buffered-selection",
+      "stream": false,
+      "accept": "application/*",
+      "expected": { "representation": "application/json" }
+    },
+    {
+      "name": "any-wildcard-accepts-stream-selection",
+      "stream": true,
+      "accept": "*/*",
+      "expected": { "representation": "text/event-stream" }
+    },
+    {
+      "name": "incompatible-exact-range-rejects-before-dispatch",
+      "stream": false,
+      "accept": "text/event-stream",
+      "expected": {
+        "dispatched": false,
+        "failure": { "code": "client.invalid_request", "domain": "client" }
+      }
+    },
+    {
+      "name": "unregistered-range-rejects-before-dispatch",
+      "stream": false,
+      "accept": "application/xml",
+      "expected": {
+        "dispatched": false,
+        "failure": { "code": "client.invalid_request", "domain": "client" }
+      }
+    },
+    {
+      "name": "unregistered-parameter-rejects-before-dispatch",
+      "stream": false,
+      "accept": "application/json; charset=utf-8",
+      "expected": {
+        "dispatched": false,
+        "failure": { "code": "client.invalid_request", "domain": "client" }
+      }
+    }
+  ]
+}

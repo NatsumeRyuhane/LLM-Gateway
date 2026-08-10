@@ -298,6 +298,68 @@ signal. The exclusions align with the [OWASP Logging Cheat Sheet](https://cheats
 
 ## Threats and required mitigations
 
+### Authentication availability bounds
+
+V0 authentication fails closed within the following implementation limits:
+
+The supported v0 deployment has exactly one serving gateway instance, as
+defined by the architecture contract. Consequently, the concurrency caps below
+are instance-local and deployment-wide at the same time. Deployment manifests
+pin one replica and the exclusive deployment lease makes any second instance
+fail readiness before it can accept data-plane or bootstrap work.
+
+- An application key is at most 512 encoded bytes. Verification permits 20
+  attempts per second with a burst of 40 per source-network bucket and 1,000 per
+  second with a burst of 2,000 per deployment, with at most 256 verifications in
+  flight on the sole serving instance. Excess work is rejected before
+  password-hash or signature work.
+- Initial bootstrap permits 5 attempts per minute with a burst of 5 per source
+  and 20 attempts per minute with a burst of 20 per deployment, with one
+  bootstrap verification in flight on the sole serving instance. Success still
+  uses the atomic one-time claim described above.
+- The application-key verifier cache holds at most 10,000 entries: successful
+  verification entries expire within 60 seconds, negative entries within 5
+  seconds, and revocation invalidates a positive entry immediately. Cache keys
+  are keyed digests, never raw credentials. Source rate-limit state is separately
+  bounded to 50,000 entries with a 10-minute idle expiry.
+- An application assertion is at most 16 KiB encoded and 32 KiB decoded, with a
+  maximum JSON nesting depth of 8, 64 claims, and 4 KiB per string claim. Only
+  configured algorithms and pre-registered verification keys are considered.
+- Request-time verification performs no DNS, HTTP, JWKS, schema, provider, or
+  other remote fetch. The credential store exposed to the request path is an
+  immutable process-local snapshot of at most 10,000 active verifier records.
+  Verification performs one keyed-digest-indexed lookup with a 5 ms deadline
+  and fails closed on a miss, stale snapshot, or deadline; it never
+  falls back to database, filesystem, or network access. A separate bounded
+  refresh worker loads required keys and metadata out of band and atomically
+  replaces the snapshot before those values become eligible for verification.
+  It starts a refresh at least every 30 seconds, permits one refresh in flight,
+  and cancels each attempt after 5 seconds without an immediate retry loop. The
+  last good snapshot may serve during refresh failure only until it reaches 60
+  seconds of age; an older snapshot is stale and request-time verification fails
+  closed as `storage.unavailable` until a refresh succeeds.
+
+At configuration activation, every effective limit resolves to a positive
+concrete value no greater than its maximum above. Missing, non-positive, or
+over-maximum values fail activation; the accepted values and configuration
+version are audited. Implementations may choose lower deployment-specific
+limits but cannot raise these maxima without a reviewed threat-model revision
+and abuse-test update.
+
+All limit failures use the canonical error envelope and this stable mapping:
+
+| Failure condition | Code and domain | Fixed client message |
+| --- | --- | --- |
+| Invalid/oversized credential or assertion, invalid bounded parse, or snapshot miss | `auth.invalid_credential`, `auth` | `Authentication failed.` |
+| Verification/bootstrap rate or concurrency admission rejected, or verifier lookup deadline | `gateway.overloaded`, `gateway` | `Gateway temporarily unavailable.` |
+| Required verifier snapshot is stale or unavailable | `storage.unavailable`, `storage` | `Gateway temporarily unavailable.` |
+
+Client errors never echo credentials, claims, effective limits, cache state, or
+admission-bucket details. Metrics and routine events use only the declared
+`failure_domain`, `failure_class`, and `outcome` vocabularies in the observability
+contract; exact codes remain in access-controlled records/traces, and no runtime
+value creates a telemetry label.
+
 | ID | Threat | Required controls | Residual risk |
 | --- | --- | --- | --- |
 | `TH-ID-01` | Application impersonates a local subject | Namespace subjects by application; authenticate application; construct `PrincipalContext` once | A compromised application can impersonate its own subjects |
@@ -311,7 +373,7 @@ signal. The exclusions align with the [OWASP Logging Cheat Sheet](https://cheats
 | `TH-RESP-02` | Truncated or malformed stream looks successful | Canonical terminal requirement and stable protocol classifications | Provider can return semantically poor but valid content |
 | `TH-BOOT-01` | Unclaimed deployment is remotely seized | Loopback default, one-time bootstrap, no default password, fail closed | Host-level attacker can control bootstrap inputs |
 | `TH-LOG-01` | Secrets/content escape through observability | Owning-package redaction, bounded schemas, canary tests, restricted audit access | Authorized diagnostic capture deliberately increases exposure |
-| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Bounded parsing, generic failures, rate limits, cache limits, no remote fetch during application-key verification | Distributed valid-looking traffic can exhaust provisioned capacity |
+| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Resolve effective limits at or below the maxima; enforce the application-key, bootstrap, cache, sole-instance concurrency, assertion-parsing, and no-request-time-fetch bounds above; reject excess work before expensive verification, reject a second serving instance, and emit only the stable bounded failure/evidence contract | Distributed valid-looking traffic within the limits can exhaust provisioned capacity |
 
 ## Verification obligations
 
@@ -333,6 +395,8 @@ signal. The exclusions align with the [OWASP Logging Cheat Sheet](https://cheats
 | `SEC-LOG-001` Routine signals and errors contain no prohibited data | Canary-secret tests inspect logs, traces, metrics, audit, notifications, and client responses |
 | `SEC-AUDIT-001` Security lifecycle and administrative mutations are attributable | Integration tests require actor, target, action, result, time, and correlation fields |
 | `SEC-BROWSER-001` Browser artifacts contain no long-lived gateway or provider credential | Built-asset scans and BFF integration tests inspect storage, responses, and outbound calls |
+| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Configuration tests resolve every effective value and reject missing, non-positive, or over-maximum limits. Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, sole-instance concurrency, cache-entry/TTL, snapshot-entry, lookup-deadline, and bootstrap limit; instrumentation proves admission rejection precedes password-hash/signature work, revocation immediately removes positive cache entries, and source-bucket state never exceeds 50,000 entries, with each idle entry expiring within 10 minutes. A controllable clock proves refresh starts within 30 seconds, one refresh is in flight, each attempt stops at 5 seconds without a retry loop, the last good snapshot expires at 60 seconds, and expired snapshots return `storage.unavailable` until a successful atomic replacement. Miss/stale/deadline fixtures fail closed; instrumented database, filesystem, resolver, and transport fakes prove zero request-time external access; deployment tests prove a second instance cannot become ready and randomized invalid input performs bounded work |
+| `SEC-AVAIL-002` Authentication limit failures use bounded non-secret errors and evidence | Table-driven tests assert the code/domain/message mapping above, verify client errors contain no credential, claim, limit, cache, or bucket data, and reject telemetry outside the failure-domain/class/outcome vocabularies registered by `gateway.telemetry.v0`; exact codes appear only in authorized records/traces |
 
 Security-sensitive requirements block the dependent implementation issue until
 their corresponding test fixture exists. Exceptions require a linked decision,

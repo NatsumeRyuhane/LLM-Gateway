@@ -9,7 +9,7 @@ backlog.
 | Issue | Deliverable | Status |
 | --- | --- | --- |
 | [#1](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/1) | V0 product contract and safety invariants | Complete on foundation branch; pending merge |
-| [#2](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/2) | Repository governance and CI quality contract | Stable CI jobs, importable ruleset, templates, dependency policy, and activation tooling implemented; ruleset activation awaits the first PR check run |
+| [#2](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/2) | Repository governance and CI quality contract | Active default-branch ruleset requires signed merge commits, resolved review threads, and all six CI checks |
 | [#3](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/3) | Foundational architecture decisions | Complete in contract pack |
 | [#4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4) | Failure taxonomy, SLIs, and availability contract | Complete in contract pack |
 | [#5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5) | Identity, credential, and endpoint threat model | Complete in contract pack |

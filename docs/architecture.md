@@ -135,6 +135,13 @@ stateless where practical, but multi-instance claims are deferred until shared
 state, migrations, affinity, shutdown, and database-failure behavior have been
 tested explicitly.
 
+The supported v0 profile permits exactly one serving gateway instance. Shipped
+deployment configuration pins the replica count to one, and startup holds an
+exclusive deployment lease; a second instance fails readiness before serving
+data-plane or bootstrap traffic. A future multi-instance profile must replace
+instance-local authentication admission with tested deployment-wide shared
+limits before it is supported.
+
 Service extraction requires evidence of at least one of:
 
 - materially different scaling characteristics;

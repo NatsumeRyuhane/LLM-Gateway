@@ -47,26 +47,43 @@ one SLI.
 
 ## Measurement conventions
 
-Each request or attempt records monotonic timestamps for `received`, `admitted`,
-`attempt_start`, `first_model_event`, every subsequent model event, and
-`terminal`. Wall-clock timestamps remain available for correlation, but elapsed
-durations use the monotonic component.
+Each request or attempt records monotonic timestamps for `received`,
+`admission_decided`, `admitted` when admitted, `attempt_start`,
+`first_model_event`, every subsequent model event, and `terminal`. Wall-clock
+timestamps remain available for correlation, but elapsed durations use the
+monotonic component.
 
 Unless a definition overrides them, every SLI:
 
-- is calculated over a stated half-open window `W = [start, end)` using the
-  request admission timestamp;
+- is calculated over a stated half-open window `W = [start, end)`. Admitted
+  populations use `admitted`; pre-admission members of `valid_offered` use
+  `admission_decided`; and the broader `received` population uses `received`;
 - reports ordinary and probe traffic separately and excludes probes from passive
   workload views;
 - is dimensioned by buffered/streaming mode, requested model group, selected
-  route/provider, required capability class, terminal failure domain/code, and
-  usage provenance where applicable;
+  `route_id`, required capability class, terminal failure domain/code, and usage
+  provenance where applicable;
 - uses bounded request-shape buckets rather than prompt, user, request, or run
   identifiers;
 - counts missing or corrupt required measurement fields as telemetry defects
   rather than silently dropping them.
 
 For a ratio, an empty denominator produces `no_data`, not 0% or 100%.
+
+The authoritative source for percentile SLIs and any combination of these
+dimensions is the record-level join of `gateway.request_timing.v0`,
+`gateway.decision.v0`, and `gateway.attempt.v0` on their immutable IDs. The join
+uses timing-record monotonic durations, the decision's bounded model/capability
+fields, and the applicable attempt's `route_id` and terminal evidence. Exact
+failure codes stay in records and never become metric labels. Prometheus
+histograms provide lower-dimensional operational views only; dashboards must not
+claim a dimension that the selected instrument does not carry.
+
+`route_id` is the v0 upstream comparison key, not a provider identity. Dispatch
+latency uses the first attempt's route, upstream TTFT uses the client-visible
+attempt's route, and terminal latency uses the terminal attempt's route when one
+exists. V0 does not publish provider-wide latency rollups; those require a
+separate bounded provider registry and versioned route-to-provider join.
 
 ## Initial SLIs
 
@@ -145,15 +162,25 @@ Report p50, p95, and p99 over ordinary requests in `W`, dimensioned by
 buffered/streaming mode, requested model group, and required capability class.
 Requests that terminate before an upstream attempt are excluded from the
 distribution and reported by terminal code. This isolates gateway decision
-overhead from provider time to first model event.
+overhead from provider time to first model event. These percentiles use the
+record-level source above; `llm_gateway_dispatch_duration_seconds` is the
+lower-dimensional operational view.
 
-### End-to-end latency
+### Latency and throughput
 
-For a streaming request `r` with at least one client-visible model event:
+For a streaming request `r` whose client-visible attempt `a(r)` produces at
+least one valid model event:
 
 ```text
-time_to_first_model_event(r) = first_model_event(r) - received(r)
+upstream_time_to_first_model_event(r) =
+  first_model_event(a(r)) - attempt_start(a(r))
 ```
+
+This is upstream TTFT. Its operational histogram is
+`llm_gateway_upstream_time_to_first_event_seconds`, whose boundary is dispatch
+to the first valid model event; richer SLO dimensions use the record-level
+source above. V0 does not label that instrument as end-to-end TTFT. End-to-end
+request latency remains the `received`-to-`terminal` measure below.
 
 For any request with a gateway/provider terminal outcome:
 
@@ -181,28 +208,40 @@ The denominator is expressed in seconds. Estimated-token throughput is a
 separate series marked `usage_provenance=estimated`; it is never mixed with
 provider-reported tokens.
 
-Report p50, p95, and p99 by request-shape buckets. Provider comparisons must not
-mix materially different input/output length, tool, schema, modality, or context
-classes. TTFT excludes streams with no model event; terminal latency retains both
-successful and failed outcomes as a dimension; throughput includes only
-canonically completed streams with positive generation duration.
+Report p50, p95, and p99 only for per-request latency samples: dispatch latency,
+upstream TTFT for the client-visible attempt, and terminal latency, using
+request-shape buckets from the record-level source. Inter-event observations
+remain a separate event-pair distribution. `generation_throughput(P, W)` remains
+one aggregate ratio of population sums and does not produce percentile samples.
+Route comparisons must not mix materially different input/output length, tool,
+schema, modality, or context classes. Upstream TTFT excludes requests with no
+model event; terminal latency retains both successful and failed outcomes as a
+record dimension; throughput includes only canonically completed streams with
+positive generation duration.
 
 ### Incident response indicators
 
 For labeled incident `i` on route `r`:
 
+- `diverted_transition(i)` is the first observed qualifying health/policy
+  transition after `incident_start(i)` that makes route `r` ineligible for new
+  ordinary requests;
+- `recovery_start(i)` is the recorded monotonic timestamp at which recovery
+  evaluation begins after mitigation or qualifying provider evidence; and
+- `recovered_transition(i)` is the first observed qualifying transition at or
+  after `recovery_start(i)` that makes route `r` eligible for new ordinary
+  requests under the same detector and policy version.
+
 ```text
 time_to_detect(i) = first_qualifying_degraded_transition(i) - incident_start(i)
 
-time_to_divert(i) =
-  max(0, last_ordinary_attempt_start_on_route(i) - incident_start(i))
+time_to_divert(i) = diverted_transition(i) - incident_start(i)
 
-time_to_recover(i) =
-  first_qualifying_recovered_transition(i) - recovery_start(i)
+time_to_recover(i) = recovered_transition(i) - recovery_start(i)
 
 failure_exposure(i) = count(
-  ordinary attempt starts on route r after incident_start(i)
-  and before the qualifying diverted/recovered boundary
+  failed ordinary attempt starts on route r at or after incident_start(i)
+  and before diverted_transition(i)
 )
 
 false_degradation_rate(r, W) =
@@ -213,11 +252,14 @@ missed_degradation_ratio(W) =
   labeled_incidents_eligible_for_evaluation(W)
 ```
 
-Time to detect is `no_data` for a missed degradation. Time to divert is zero when
-no ordinary attempt starts after the incident boundary. Explicit probes and
-documented in-flight affinity are excluded from diversion and exposure, then
-reported separately. Dimension the results by route/provider, incident class,
-detector version, evidence source, and synthetic/live origin.
+Time to detect is `no_data` for a missed degradation. Time to divert and failure
+exposure are `no_data` (or explicitly right-censored at the evaluation-window
+end) until `diverted_transition` is observed; ordinary attempt counts never
+stand in for that transition. Time to recover is likewise `no_data` or censored
+until `recovered_transition` is observed. Explicit probes and documented
+in-flight affinity are excluded from diversion and exposure, then reported
+separately. Dimension the results by route/provider, incident class, detector
+version, evidence source, and synthetic/live origin.
 
 Synthetic experiments use the injector's monotonic timestamp as the incident
 boundary. Live incidents use the earliest corroborated observation recorded in
@@ -229,7 +271,8 @@ For each route `r`:
 
 ```text
 probe_request_share(r, W) =
-  probe_attempts(r, W) / all_upstream_attempts(r, W)
+  probe_requests_dispatched_to_route(r, W) /
+  all_requests_dispatched_to_route(r, W)
 
 probe_token_share(r, W) =
   probe_input_output_tokens(r, W) / all_input_output_tokens(r, W)
@@ -245,6 +288,8 @@ probe_rate_limit_share(r, W) =
 Also report absolute probe requests, tokens, cost, and failures. Token and cost
 shares are `no_data` when their denominator is unknown; reported and estimated
 usage remain separate. Probe traffic is excluded from passive workload SLIs.
+Each request is counted at most once per route in the request-share operands,
+regardless of retries or multiple attempts on that route.
 
 ## Correctness objectives
 
