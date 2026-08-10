@@ -38,6 +38,9 @@ Start with [the v0 product contract](docs/requirements.md),
 Protocol implementers should also read [the canonical protocol](docs/protocol.md)
 and [the v0 compatibility matrix](docs/compatibility-matrix.md).
 
+Instrumentation and dashboard work must follow
+[the observability, privacy, and cardinality contract](docs/observability.md).
+
 Agents should start from [the shared context entrypoint](.agents/README.md), then
 fetch the live GitHub Issue and Notion design. `.claude` points to the same
 instructions; issue bodies and the synchronized design are intentionally not

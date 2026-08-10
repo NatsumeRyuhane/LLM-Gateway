@@ -41,6 +41,7 @@ jobs:
             docs/threat-model.md
             docs/protocol.md
             docs/compatibility-matrix.md
+            docs/observability.md
           )
           for path in "${required[@]}"; do
             test -s "$path" || {
