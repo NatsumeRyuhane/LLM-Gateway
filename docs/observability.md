@@ -83,7 +83,7 @@ Span names are fixed operation classes, never IDs, model names, paths, or error
 messages. The data-plane hierarchy is:
 
 ```text
-HTTP SERVER POST /v1/chat/completions
+gateway.http.request (SERVER)
   gateway.auth.authenticate
   gateway.request.validate
   gateway.route.decide
@@ -103,6 +103,10 @@ span links the failed and next `attempt_id`. Deferred exporters or accounting
 work that outlives the request starts a new trace linked to the request span
 instead of falsifying its duration.
 
+The root records the bounded registered route template separately as
+`http.route` (for example, `/v1/chat/completions`) and the operation class as
+`gateway.operation`. Neither value is interpolated into the span name.
+
 ### Common span attributes
 
 Resource attributes identify `service.name`, `service.version`, deployment
@@ -114,6 +118,7 @@ gateway.contract.version
 gateway.request.id
 gateway.traffic.class
 gateway.operation
+http.route
 gateway.stream
 gateway.model_group
 gateway.capability_class
@@ -138,8 +143,10 @@ gateway.usage.provenance
 `request_id`, `decision_id`, and `attempt_id` may appear on spans for lookup but
 never in the span name. Conversation/run identifiers and application subjects
 are excluded from routine spans; an operator uses the authorized decision or
-accounting API to bridge from those identities to a request. Provider endpoint,
-credential, raw model input/output, and raw exception messages are prohibited.
+accounting API to bridge from those identities to a request and then to a
+registered `route_id` or approved redacted route template. Raw endpoint hosts,
+credentials, raw model input/output, and raw exception messages are prohibited
+in normal records and traces.
 
 The root span ends only after the downstream terminal result and synchronous
 cleanup are known. A provider HTTP success does not set gateway success. Span
@@ -180,6 +187,10 @@ All metric label values come from enums or bounded configuration registries:
 | `failure_domain` | 8 |
 | `failure_class` | 16 metric-level classes |
 | `capability_class` | 8 request-shape buckets |
+| `drop_reason` | 8 |
+| `direction` | 2 |
+| `usage_provenance` | 2 |
+| `cost_provenance` | 2 |
 | `route_id` | 200 configured routes |
 | `model_group` | 100 configured groups |
 | `adapter_kind` | 16 registered implementations |
@@ -191,6 +202,7 @@ All metric label values come from enums or bounded configuration registries:
 | `exporter` | 8 configured exporters |
 | `audit_action` | 16 stable actions |
 | `resource_type` | 8 audited resource classes |
+| `audit_outcome` | 4 |
 
 The exact shared vocabularies are:
 
@@ -259,6 +271,11 @@ from long-lived service-level views.
 | `llm_gateway_telemetry_dropped_records_total` | Counter | records (`1`) | `signal`, `drop_reason` | 32 / 32 | Capacity, sampling, redaction, or schema drops |
 | `llm_gateway_audit_changes_total` | Counter | changes (`1`) | `audit_action`, `resource_type`, `audit_outcome` | 512 / 512 | Control-plane mutations without actor/resource IDs |
 
+The inventory bounds use the registered maxima above: `drop_reason=8`,
+`direction=2`, `usage_provenance=2`, `cost_provenance=2`, and
+`audit_outcome=4`. Adding a value requires a versioned registry and budget
+update before instrumentation can emit it.
+
 Each histogram has 15 finite buckets plus `+Inf`, sum, and count, so one label set
 exports 18 Prometheus series; the table includes that multiplier. Metric
 `outcome` subsets never exceed the global maximum of 8.
@@ -270,10 +287,12 @@ same boundaries, never per-route custom buckets. Token and cost measures are
 counters, not per-request labeled gauges. Retry amplification, completion
 rates, throughput, and SLI ratios are recording rules derived from the inventory.
 
-Exact failure codes, policy versions, request IDs, provider status codes, model
-names supplied at runtime, and endpoint hosts belong in records/traces—not
-metric labels. A schema test enumerates every instrument and rejects any label
-not listed in this table.
+Exact failure codes, policy versions, request IDs, provider status codes, and
+model names supplied at runtime belong in records/traces—not metric labels.
+Route values in normal records and traces are limited to registered `route_id`
+values or approved redacted route templates; raw endpoint hosts are prohibited.
+A schema test enumerates every instrument and rejects any label not listed in
+this table.
 
 ## Structured operational events
 
@@ -408,7 +427,8 @@ integrity protected and readable only through an authorized control-plane API.
 Instrumentation builds each signal from typed canonical fields; it does not log
 arbitrary request/provider objects and then redact them. The exporter applies a
 second allowlist and drops unknown fields. URL values are reduced to registered
-route IDs or approved route templates. Headers are excluded except safe bounded
+route IDs or approved redacted route templates; raw endpoint hosts are never
+retained in normal records or traces. Headers are excluded except safe bounded
 protocol facts. Query strings, fragments, credentials, cookies, assertions,
 request/response bodies, tool schemas/arguments, and raw errors are discarded.
 
