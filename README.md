@@ -20,9 +20,10 @@ and observability contracts before implementing automatic failover.
 - Treat engineering evidence—tests, traces, benchmarks, runbooks, and incident
   reports—as part of the product.
 
-## Planned repository layout
+## Repository layout
 
-- `backend/` — Go gateway, control API, and deterministic mock provider.
+- [`backend/`](backend/README.md) — Go gateway, control API boundaries, and the
+  standalone mock-provider process.
 - `frontend/` — React, TypeScript, and Tailwind workspace containing the
   gateway-aware reference application and operator dashboard.
 - `tests/` — cross-service end-to-end, load, replay, and fault fixtures.
