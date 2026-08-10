@@ -30,8 +30,8 @@ its own local users. Public, cross-organization gateway SaaS is not a v0 goal.
 | Agent/service | Makes scoped inference calls with optional run identity | May act independently or for an application user |
 | Provider | Serves a concrete model route | Untrusted for availability, protocol correctness, and declared behavior |
 
-Provider credentials, gateway credentials, and identity assertions are separate
-credential classes. None may be forwarded across the wrong boundary.
+Provider credentials, application credentials, and identity assertions are
+separate credential classes. None may be forwarded across the wrong boundary.
 
 ## V0 journeys
 
@@ -100,6 +100,13 @@ actions belong to a separate versioned control API.
   constraints, preferences, fallback rules, and affinity behavior.
 - **Application:** a registered trusted integration with independently scoped
   and revocable gateway credentials.
+- **Credential:** authentication material belonging to one credential class.
+  Credential classes cannot be substituted for or forwarded across trust
+  boundaries.
+- **Application credential:** a credential issued by the gateway to a registered
+  application and presented on inbound data-plane requests.
+- **Provider credential:** a credential supplied by an operator, stored by the
+  gateway, and presented only to its associated upstream provider.
 - **Application subject:** a local user or service identified within one
   application namespace.
 - **Gateway principal:** an optional canonical accounting identity linked from
