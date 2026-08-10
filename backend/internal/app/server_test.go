@@ -23,13 +23,14 @@ func TestServerStartsServesAndShutsDown(t *testing.T) {
 	configured := config.GatewayHTTPDefaults()
 	configured.ShutdownTimeout = time.Second
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	ctx, cancel := context.WithCancel(t.Context())
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("net.Listen() error = %v", err)
+		t.Fatalf("ListenConfig.Listen() error = %v", err)
 	}
 
 	server := NewServer("test", configured, mux, readiness, discardLogger())
-	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)
 	go func() {
 		serveDone <- server.Serve(ctx, listener)
@@ -41,7 +42,11 @@ func TestServerStartsServesAndShutsDown(t *testing.T) {
 	}
 
 	client := &http.Client{Timeout: time.Second}
-	response, err := client.Get("http://" + listener.Addr().String() + health.ReadinessPath)
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+listener.Addr().String()+health.ReadinessPath, nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		t.Fatalf("GET readiness error = %v", err)
 	}
@@ -80,22 +85,27 @@ func TestServerForcesCloseWhenGracefulShutdownExpires(t *testing.T) {
 
 	configured := config.GatewayHTTPDefaults()
 	configured.ShutdownTimeout = 25 * time.Millisecond
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	ctx, cancel := context.WithCancel(t.Context())
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("net.Listen() error = %v", err)
+		t.Fatalf("ListenConfig.Listen() error = %v", err)
 	}
 
 	server := NewServer("test", configured, mux, health.NewState(), discardLogger())
-	ctx, cancel := context.WithCancel(context.Background())
 	serveDone := make(chan error, 1)
 	go func() {
 		serveDone <- server.Serve(ctx, listener)
 	}()
 	waitForSignal(t, server.Started(), "server start")
 
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://"+listener.Addr().String()+"/block", nil)
+	if err != nil {
+		t.Fatalf("NewRequestWithContext() error = %v", err)
+	}
 	clientDone := make(chan error, 1)
 	go func() {
-		response, requestErr := (&http.Client{Timeout: time.Second}).Get("http://" + listener.Addr().String() + "/block")
+		response, requestErr := (&http.Client{Timeout: time.Second}).Do(request)
 		if response != nil {
 			_ = response.Body.Close()
 		}

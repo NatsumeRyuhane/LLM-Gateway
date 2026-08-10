@@ -71,7 +71,8 @@ func (s *Server) Started() <-chan struct{} {
 
 // Run binds the configured address and owns the listener until shutdown.
 func (s *Server) Run(ctx context.Context) error {
-	listener, err := net.Listen("tcp", s.config.Address)
+	var listenConfig net.ListenConfig
+	listener, err := listenConfig.Listen(ctx, "tcp", s.config.Address)
 	if err != nil {
 		return fmt.Errorf("%s listen: %w", s.name, err)
 	}

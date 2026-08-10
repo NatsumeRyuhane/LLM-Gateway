@@ -39,7 +39,7 @@ func TestHealthEndpointsAllowHeadButRejectMutationMethods(t *testing.T) {
 func assertStatus(t *testing.T, handler http.Handler, method, path string, wantStatus int, wantBody string) {
 	t.Helper()
 
-	request := httptest.NewRequest(method, path, nil)
+	request := httptest.NewRequestWithContext(t.Context(), method, path, nil)
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 
