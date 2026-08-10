@@ -302,14 +302,21 @@ signal. The exclusions align with the [OWASP Logging Cheat Sheet](https://cheats
 
 V0 authentication fails closed within the following implementation limits:
 
+The supported v0 deployment has exactly one serving gateway instance, as
+defined by the architecture contract. Consequently, the concurrency caps below
+are instance-local and deployment-wide at the same time. Deployment manifests
+pin one replica and the exclusive deployment lease makes any second instance
+fail readiness before it can accept data-plane or bootstrap work.
+
 - An application key is at most 512 encoded bytes. Verification permits 20
   attempts per second with a burst of 40 per source-network bucket and 1,000 per
   second with a burst of 2,000 per deployment, with at most 256 verifications in
-  flight. Excess work is rejected before password-hash or signature work.
+  flight on the sole serving instance. Excess work is rejected before
+  password-hash or signature work.
 - Initial bootstrap permits 5 attempts per minute with a burst of 5 per source
   and 20 attempts per minute with a burst of 20 per deployment, with one
-  bootstrap verification in flight. Success still uses the atomic one-time
-  claim described above.
+  bootstrap verification in flight on the sole serving instance. Success still
+  uses the atomic one-time claim described above.
 - The application-key verifier cache holds at most 10,000 entries: successful
   verification entries expire within 60 seconds, negative entries within 5
   seconds, and revocation invalidates a positive entry immediately. Cache keys
@@ -341,7 +348,7 @@ threat-model revision and abuse-test update.
 | `TH-RESP-02` | Truncated or malformed stream looks successful | Canonical terminal requirement and stable protocol classifications | Provider can return semantically poor but valid content |
 | `TH-BOOT-01` | Unclaimed deployment is remotely seized | Loopback default, one-time bootstrap, no default password, fail closed | Host-level attacker can control bootstrap inputs |
 | `TH-LOG-01` | Secrets/content escape through observability | Owning-package redaction, bounded schemas, canary tests, restricted audit access | Authorized diagnostic capture deliberately increases exposure |
-| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Enforce the application-key, bootstrap, cache, concurrency, assertion-parsing, and no-request-time-fetch bounds above; reject excess work before expensive verification | Distributed valid-looking traffic within the limits can exhaust provisioned capacity |
+| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Enforce the application-key, bootstrap, cache, sole-instance concurrency, assertion-parsing, and no-request-time-fetch bounds above; reject excess work before expensive verification and reject a second serving instance | Distributed valid-looking traffic within the limits can exhaust provisioned capacity |
 
 ## Verification obligations
 
@@ -363,7 +370,7 @@ threat-model revision and abuse-test update.
 | `SEC-LOG-001` Routine signals and errors contain no prohibited data | Canary-secret tests inspect logs, traces, metrics, audit, notifications, and client responses |
 | `SEC-AUDIT-001` Security lifecycle and administrative mutations are attributable | Integration tests require actor, target, action, result, time, and correlation fields |
 | `SEC-BROWSER-001` Browser artifacts contain no long-lived gateway or provider credential | Built-asset scans and BFF integration tests inspect storage, responses, and outbound calls |
-| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, concurrency, cache-entry/TTL, and bootstrap limit; instrumented resolvers/transports prove zero request-time remote fetches and bounded work under randomized invalid input |
+| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, sole-instance concurrency, cache-entry/TTL, and bootstrap limit; deployment tests prove a second instance cannot become ready; instrumented resolvers/transports prove zero request-time remote fetches and bounded work under randomized invalid input |
 
 Security-sensitive requirements block the dependent implementation issue until
 their corresponding test fixture exists. Exceptions require a linked decision,
