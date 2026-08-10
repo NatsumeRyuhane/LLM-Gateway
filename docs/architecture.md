@@ -1,6 +1,6 @@
 # Architecture
 
-Status: M0 draft for [issue #3](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/3)
+Status: Accepted for M0 under [issue #3](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/3)
 
 ## System context
 
