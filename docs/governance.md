@@ -13,12 +13,15 @@ targets the default branch with active enforcement and no bypass actors. It:
 
 - blocks deletion and force pushes;
 - requires linear history and verified signatures;
-- restricts commit subjects to Conventional Commits;
 - requires a pull request using squash or rebase merge;
 - requires all review conversations to be resolved;
 - requires the stable `repository`, `backend`, `frontend`, `integration`,
   `security`, and `container` checks against the latest base;
 - requires zero approvals only while the repository has no independent reviewer.
+
+The required `repository` check validates every pull-request commit subject
+against the Conventional Commits contract. This remains a CI policy because the
+repository ruleset API does not accept commit-metadata rules for this repository.
 
 The zero-approval setting is an explicit single-maintainer limitation, not a
 statement that self-review is sufficient. As soon as a qualified independent
