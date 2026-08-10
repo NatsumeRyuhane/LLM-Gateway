@@ -338,11 +338,30 @@ Errors do not embed a raw Go error string unless it has passed the stable
 redaction/classification boundary. Stack traces are limited to gateway-owned
 errors in the protected diagnostic sink and remain absent from client errors.
 
-## Routing decision and attempt records
+## Request timing, routing decision, and attempt records
 
 Decision records are the authoritative reconstruction evidence. They live in
 the gateway's access-controlled operational store, not a metric label, log body,
 or trace-only backend.
+
+```text
+RequestTimingRecord gateway.request_timing.v0
+  request_id, decision_id?
+  occurred_at, traffic_class, stream
+  model_group, capability_class
+  received_at, admission_decided_at, admitted_at?
+  dispatch_duration_ms?, terminal_duration_ms?
+  client_visible_attempt_id?, upstream_ttft_ms?
+  terminal_outcome, failure_domain?, failure_code?
+  usage_provenance?
+  schema_version
+```
+
+One timing record is written for every received request. Durations are computed
+from the monotonic timestamps defined by the reliability contract before the
+record is emitted; wall-clock fields select the measurement window. The record
+joins to `RoutingDecisionRecord` by `decision_id` and to `AttemptRecord` by the
+visible or ordered attempt IDs. Exact failure codes remain record-only.
 
 ```text
 RoutingDecisionRecord gateway.decision.v0

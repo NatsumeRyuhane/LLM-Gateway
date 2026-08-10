@@ -61,14 +61,29 @@ Unless a definition overrides them, every SLI:
 - reports ordinary and probe traffic separately and excludes probes from passive
   workload views;
 - is dimensioned by buffered/streaming mode, requested model group, selected
-  route/provider, required capability class, terminal failure domain/code, and
-  usage provenance where applicable;
+  `route_id`, required capability class, terminal failure domain/code, and usage
+  provenance where applicable;
 - uses bounded request-shape buckets rather than prompt, user, request, or run
   identifiers;
 - counts missing or corrupt required measurement fields as telemetry defects
   rather than silently dropping them.
 
 For a ratio, an empty denominator produces `no_data`, not 0% or 100%.
+
+The authoritative source for percentile SLIs and any combination of these
+dimensions is the record-level join of `gateway.request_timing.v0`,
+`gateway.decision.v0`, and `gateway.attempt.v0` on their immutable IDs. The join
+uses timing-record monotonic durations, the decision's bounded model/capability
+fields, and the applicable attempt's `route_id` and terminal evidence. Exact
+failure codes stay in records and never become metric labels. Prometheus
+histograms provide lower-dimensional operational views only; dashboards must not
+claim a dimension that the selected instrument does not carry.
+
+`route_id` is the v0 upstream comparison key, not a provider identity. Dispatch
+latency uses the first attempt's route, upstream TTFT uses the client-visible
+attempt's route, and terminal latency uses the terminal attempt's route when one
+exists. V0 does not publish provider-wide latency rollups; those require a
+separate bounded provider registry and versioned route-to-provider join.
 
 ## Initial SLIs
 
@@ -147,7 +162,9 @@ Report p50, p95, and p99 over ordinary requests in `W`, dimensioned by
 buffered/streaming mode, requested model group, and required capability class.
 Requests that terminate before an upstream attempt are excluded from the
 distribution and reported by terminal code. This isolates gateway decision
-overhead from provider time to first model event.
+overhead from provider time to first model event. These percentiles use the
+record-level source above; `llm_gateway_dispatch_duration_seconds` is the
+lower-dimensional operational view.
 
 ### Latency and throughput
 
@@ -159,11 +176,11 @@ upstream_time_to_first_model_event(r) =
   first_model_event(a(r)) - attempt_start(a(r))
 ```
 
-This is upstream TTFT and is backed by
+This is upstream TTFT. Its operational histogram is
 `llm_gateway_upstream_time_to_first_event_seconds`, whose boundary is dispatch
-to the first valid model event. V0 does not label that instrument as end-to-end
-TTFT. End-to-end request latency remains the `received`-to-`terminal` measure
-below.
+to the first valid model event; richer SLO dimensions use the record-level
+source above. V0 does not label that instrument as end-to-end TTFT. End-to-end
+request latency remains the `received`-to-`terminal` measure below.
 
 For any request with a gateway/provider terminal outcome:
 
@@ -193,14 +210,14 @@ provider-reported tokens.
 
 Report p50, p95, and p99 only for per-request latency samples: dispatch latency,
 upstream TTFT for the client-visible attempt, and terminal latency, using
-request-shape buckets. Inter-event observations remain a separate event-pair
-distribution. `generation_throughput(P, W)` remains one aggregate ratio of
-population sums and does not produce percentile samples. Provider comparisons
-must not mix materially different input/output length, tool, schema, modality,
-or context classes. Upstream TTFT excludes requests with no model event;
-terminal latency retains both successful and failed outcomes as a dimension;
-throughput includes only canonically completed streams with positive generation
-duration.
+request-shape buckets from the record-level source. Inter-event observations
+remain a separate event-pair distribution. `generation_throughput(P, W)` remains
+one aggregate ratio of population sums and does not produce percentile samples.
+Route comparisons must not mix materially different input/output length, tool,
+schema, modality, or context classes. Upstream TTFT excludes requests with no
+model event; terminal latency retains both successful and failed outcomes as a
+record dimension; throughput includes only canonically completed streams with
+positive generation duration.
 
 ### Incident response indicators
 
