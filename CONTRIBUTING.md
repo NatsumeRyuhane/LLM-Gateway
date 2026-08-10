@@ -57,6 +57,8 @@ least once. The intended local equivalents are:
 
 ```bash
 git diff --check
+bash scripts/ci/verify-generated.sh
+bash scripts/ci/security.sh
 ```
 
 ### Backend
@@ -66,6 +68,7 @@ From `backend/` once the Go module exists:
 ```bash
 gofmt -w .
 go vet ./...
+go tool staticcheck ./...
 go test ./...
 go test -race ./...
 go build ./...
@@ -94,6 +97,9 @@ Integration, race, load, replay, and fault-injection suites are added as their
 fixtures land. Timing-sensitive tests must synchronize on observable events
 instead of relying on arbitrary sleeps.
 
+The stable check names, activation paths, pinned-tool requirements, and
+deterministic integration environment are defined in `docs/ci.md`.
+
 ## Review guide
 
 Reviewers should check that:
@@ -120,4 +126,5 @@ Major updates require an issue or ADR when they change an accepted contract.
 conversation resolution, and linear history. Force pushes, deletion, and
 administrator bypass are disabled. Required approval is deferred while there is
 no independent reviewer; it should be enabled as soon as a qualified collaborator
-is available.
+is available. The importable configuration and activation procedure live in
+`docs/governance.md` and `.github/rulesets/main.json`.

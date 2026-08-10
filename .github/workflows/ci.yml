@@ -1,0 +1,159 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Record pending backend scaffold
+        if: ${{ hashFiles('backend/go.mod') == '' }}
+        run: |
+          echo "::notice::backend/go.mod is not present; backend checks activate with issue #9."
+      - name: Set up pinned Go toolchain
+        if: ${{ hashFiles('backend/go.mod') != '' }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+      - name: Verify formatting, analysis, tests, race safety, and build
+        if: ${{ hashFiles('backend/go.mod') != '' }}
+        working-directory: backend
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          test -z "$unformatted" || {
+            echo "$unformatted"
+            exit 1
+          }
+          go vet ./...
+          go tool staticcheck ./...
+          go test ./...
+          go test -race ./...
+          go build ./...
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Record pending frontend scaffold
+        if: ${{ hashFiles('frontend/package.json') == '' }}
+        run: echo "::notice::frontend/package.json is not present; frontend checks activate with the frontend scaffold."
+      - name: Require pinned frontend toolchain
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        shell: bash
+        run: |
+          test -s frontend/.node-version
+          test -s frontend/pnpm-lock.yaml
+          grep -q '"packageManager"' frontend/package.json
+      - name: Set up pinned Node.js toolchain
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: frontend/.node-version
+          package-manager-cache: false
+      - name: Install pinned pnpm
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        working-directory: frontend
+        run: |
+          corepack enable
+          corepack install
+      - name: Verify lint, types, tests, and production build
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        working-directory: frontend
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+          pnpm build
+
+  integration:
+    name: integration
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.4-alpine3.23
+        env:
+          POSTGRES_DB: gateway_test
+          POSTGRES_USER: gateway
+          POSTGRES_PASSWORD: gateway
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gateway -d gateway_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Record pending integration harness
+        if: ${{ hashFiles('tests/integration/run.sh') == '' }}
+        run: echo "::notice::tests/integration/run.sh is not present; the PostgreSQL and deterministic-provider contract is reserved."
+      - name: Set up pinned Go toolchain
+        if: ${{ hashFiles('tests/integration/run.sh') != '' && hashFiles('backend/go.mod') != '' }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+      - name: Run PostgreSQL and deterministic-provider integration suite
+        if: ${{ hashFiles('tests/integration/run.sh') != '' }}
+        env:
+          TEST_DATABASE_URL: postgres://gateway:gateway@localhost:5432/gateway_test?sslmode=disable
+          TEST_PROVIDER_MODE: deterministic
+        run: bash tests/integration/run.sh
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Check repository security policy
+        run: bash scripts/ci/security.sh
+      - name: Set up pinned Go toolchain
+        if: ${{ hashFiles('backend/go.mod') != '' }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: backend/go.mod
+      - name: Scan Go dependencies for known vulnerabilities
+        if: ${{ hashFiles('backend/go.mod') != '' }}
+        working-directory: backend
+        run: go tool govulncheck ./...
+      - name: Set up pinned Node.js toolchain
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: frontend/.node-version
+          package-manager-cache: false
+      - name: Audit frontend production dependencies
+        if: ${{ hashFiles('frontend/package.json') != '' }}
+        working-directory: frontend
+        run: |
+          corepack enable
+          corepack install
+          pnpm audit --prod --audit-level high
+
+  container:
+    name: container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+      - name: Build tracked deployment containers
+        run: bash scripts/ci/container.sh
