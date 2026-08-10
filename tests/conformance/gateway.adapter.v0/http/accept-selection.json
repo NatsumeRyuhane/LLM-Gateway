@@ -3,6 +3,21 @@
   "semantic": "http.accept_selection",
   "cases": [
     {
+      "name": "omitted-stream-defaults-to-buffered-selection",
+      "accept": "application/json",
+      "expected": { "representation": "application/json" }
+    },
+    {
+      "name": "omitted-accept-allows-buffered-selection",
+      "stream": false,
+      "expected": { "representation": "application/json" }
+    },
+    {
+      "name": "omitted-accept-allows-stream-selection",
+      "stream": true,
+      "expected": { "representation": "text/event-stream" }
+    },
+    {
       "name": "mixed-exact-ranges-accept-buffered-selection",
       "stream": false,
       "accept": "text/event-stream, application/json",
@@ -19,6 +34,12 @@
       "stream": true,
       "accept": "text/event-stream;q=0.2, application/json;q=1",
       "expected": { "representation": "text/event-stream" }
+    },
+    {
+      "name": "repeated-exact-ranges-use-highest-quality",
+      "stream": false,
+      "accept": "application/json;q=0, application/json;q=0.4",
+      "expected": { "representation": "application/json" }
     },
     {
       "name": "exact-zero-quality-overrides-positive-wildcard",
@@ -54,6 +75,15 @@
       "name": "unregistered-range-rejects-before-dispatch",
       "stream": false,
       "accept": "application/xml",
+      "expected": {
+        "dispatched": false,
+        "failure": { "code": "client.invalid_request", "domain": "client" }
+      }
+    },
+    {
+      "name": "unregistered-parameter-rejects-before-dispatch",
+      "stream": false,
+      "accept": "application/json; charset=utf-8",
       "expected": {
         "dispatched": false,
         "failure": { "code": "client.invalid_request", "domain": "client" }
