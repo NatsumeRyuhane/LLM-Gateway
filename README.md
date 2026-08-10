@@ -35,6 +35,9 @@ Start with [the v0 product contract](docs/requirements.md),
 [the threat model](docs/threat-model.md), and
 [the active work tracker](docs/TODO.md).
 
+Protocol implementers should also read [the canonical protocol](docs/protocol.md)
+and [the v0 compatibility matrix](docs/compatibility-matrix.md).
+
 Agents should start from [the shared context entrypoint](.agents/README.md), then
 fetch the live GitHub Issue and Notion design. `.claude` points to the same
 instructions; issue bodies and the synchronized design are intentionally not
