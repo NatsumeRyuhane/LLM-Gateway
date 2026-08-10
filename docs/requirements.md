@@ -222,8 +222,7 @@ issue or ADR records the outcome.
   [reliability indicators and availability contract](slo.md)
 - Protocol: [canonical protocol and provider-adapter contract, issue
   #6](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/6)
-- Security: [identity, credential, and endpoint threat model, issue
-  #5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5)
+- Security: [identity, credential, and endpoint threat model](threat-model.md)
 - Observability: [observability, privacy, and cardinality contract, issue
   #8](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/8)
 - [M0 work tracker](TODO.md)
