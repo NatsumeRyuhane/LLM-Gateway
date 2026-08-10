@@ -334,10 +334,26 @@ fail readiness before it can accept data-plane or bootstrap work.
   refresh worker loads required keys and metadata out of band and atomically
   replaces the snapshot before those values become eligible for verification.
 
-All limit failures return the same bounded authentication failure shape and emit
-only rate-limited, cardinality-bounded evidence. Implementations may choose lower
-deployment-specific limits but cannot raise these maxima without a reviewed
-threat-model revision and abuse-test update.
+At configuration activation, every effective limit resolves to a positive
+concrete value no greater than its maximum above. Missing, non-positive, or
+over-maximum values fail activation; the accepted values and configuration
+version are audited. Implementations may choose lower deployment-specific
+limits but cannot raise these maxima without a reviewed threat-model revision
+and abuse-test update.
+
+All limit failures use the canonical error envelope and this stable mapping:
+
+| Failure condition | Code and domain | Fixed client message |
+| --- | --- | --- |
+| Invalid/oversized credential or assertion, invalid bounded parse, or snapshot miss | `auth.invalid_credential`, `auth` | `Authentication failed.` |
+| Verification/bootstrap rate or concurrency admission rejected, or verifier lookup deadline | `gateway.overloaded`, `gateway` | `Gateway temporarily unavailable.` |
+| Required verifier snapshot is stale or unavailable | `storage.unavailable`, `storage` | `Gateway temporarily unavailable.` |
+
+Client errors never echo credentials, claims, effective limits, cache state, or
+admission-bucket details. Metrics and routine events use only the declared
+`failure_domain`, `failure_class`, and `outcome` vocabularies in the observability
+contract; exact codes remain in access-controlled records/traces, and no runtime
+value creates a telemetry label.
 
 | ID | Threat | Required controls | Residual risk |
 | --- | --- | --- | --- |
@@ -352,7 +368,7 @@ threat-model revision and abuse-test update.
 | `TH-RESP-02` | Truncated or malformed stream looks successful | Canonical terminal requirement and stable protocol classifications | Provider can return semantically poor but valid content |
 | `TH-BOOT-01` | Unclaimed deployment is remotely seized | Loopback default, one-time bootstrap, no default password, fail closed | Host-level attacker can control bootstrap inputs |
 | `TH-LOG-01` | Secrets/content escape through observability | Owning-package redaction, bounded schemas, canary tests, restricted audit access | Authorized diagnostic capture deliberately increases exposure |
-| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Enforce the application-key, bootstrap, cache, sole-instance concurrency, assertion-parsing, and no-request-time-fetch bounds above; reject excess work before expensive verification and reject a second serving instance | Distributed valid-looking traffic within the limits can exhaust provisioned capacity |
+| `TH-AVAIL-01` | Authentication or security controls become an unbounded DoS surface | Resolve effective limits at or below the maxima; enforce the application-key, bootstrap, cache, sole-instance concurrency, assertion-parsing, and no-request-time-fetch bounds above; reject excess work before expensive verification, reject a second serving instance, and emit only the stable bounded failure/evidence contract | Distributed valid-looking traffic within the limits can exhaust provisioned capacity |
 
 ## Verification obligations
 
@@ -374,7 +390,8 @@ threat-model revision and abuse-test update.
 | `SEC-LOG-001` Routine signals and errors contain no prohibited data | Canary-secret tests inspect logs, traces, metrics, audit, notifications, and client responses |
 | `SEC-AUDIT-001` Security lifecycle and administrative mutations are attributable | Integration tests require actor, target, action, result, time, and correlation fields |
 | `SEC-BROWSER-001` Browser artifacts contain no long-lived gateway or provider credential | Built-asset scans and BFF integration tests inspect storage, responses, and outbound calls |
-| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, sole-instance concurrency, cache-entry/TTL, snapshot-entry, lookup-deadline, and bootstrap limit; miss/stale/deadline fixtures fail closed while instrumented database, filesystem, resolver, and transport fakes prove zero request-time external access; deployment tests prove a second instance cannot become ready and randomized invalid input performs bounded work |
+| `SEC-AVAIL-001` Authentication verification remains within the declared availability bounds | Configuration tests resolve every effective value and reject missing, non-positive, or over-maximum limits. Abuse tests exceed each key/assertion size, parse depth/count, per-source/deployment rate, sole-instance concurrency, cache-entry/TTL, snapshot-entry, lookup-deadline, and bootstrap limit; instrumentation proves admission rejection precedes password-hash/signature work, revocation immediately removes positive cache entries, and source-bucket state never exceeds 50,000 entries or survives 10 idle minutes. Miss/stale/deadline fixtures fail closed; instrumented database, filesystem, resolver, and transport fakes prove zero request-time external access; deployment tests prove a second instance cannot become ready and randomized invalid input performs bounded work |
+| `SEC-AVAIL-002` Authentication limit failures use bounded non-secret errors and evidence | Table-driven tests assert the code/domain/message mapping above, verify client errors contain no credential, claim, limit, cache, or bucket data, and reject telemetry outside the failure-domain/class/outcome vocabularies registered by `gateway.telemetry.v0`; exact codes appear only in authorized records/traces |
 
 Security-sensitive requirements block the dependent implementation issue until
 their corresponding test fixture exists. Exceptions require a linked decision,
