@@ -1,0 +1,47 @@
+name: Engineering task
+description: Plan an implementation, refactor, test, or infrastructure change.
+title: ""
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Define an observable outcome. Machine-local setup belongs in contributor
+        documentation rather than the project backlog.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What capability, risk, or engineering gap does this address?
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: What is included, and what is intentionally excluded?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Use a checklist of testable outcomes and required evidence.
+      placeholder: |
+        - [ ] Behavior is covered by...
+        - [ ] Failure evidence shows...
+        - [ ] Documentation is updated...
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and decisions
+      description: Link blocking issues, ADRs, contracts, or unresolved choices.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Exit evidence
+      description: What artifact, test, benchmark, trace, or demo proves completion?
+    validations:
+      required: true

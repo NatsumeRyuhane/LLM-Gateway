@@ -1,0 +1,48 @@
+name: Experiment or benchmark
+description: Propose a measurable reliability, routing, health, or performance study.
+title: ""
+labels:
+  - area:testing
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Question and hypothesis
+      description: State the falsifiable hypothesis and why the result changes a decision.
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Experimental design
+      description: Define baselines, treatments, controlled variables, repetitions, and seeds.
+    validations:
+      required: true
+  - type: textarea
+    id: workload
+    attributes:
+      label: Workload and fault profiles
+      description: Identify versions, request-shape strata, providers, fixtures, and contamination controls.
+    validations:
+      required: true
+  - type: textarea
+    id: metrics
+    attributes:
+      label: Metrics and decision rule
+      description: Define formulas, uncertainty, thresholds, and inconclusive outcomes before running.
+    validations:
+      required: true
+  - type: textarea
+    id: cost
+    attributes:
+      label: Cost, privacy, and safety budget
+      description: Bound tokens, currency, duration, rate limits, retained data, and operational risk.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Reproducibility and exit evidence
+      description: Identify scripts, datasets, environment metadata, reports, and artifacts to retain.
+    validations:
+      required: true

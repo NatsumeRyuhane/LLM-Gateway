@@ -1,0 +1,143 @@
+# Architecture
+
+Status: M0 draft for [issue #3](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/3)
+
+## System context
+
+```mermaid
+flowchart LR
+    User["User or agent"] --> App["Trusted application"]
+    App -->|"OpenAI-compatible data plane"| Gateway["Adaptive LLM Gateway"]
+    Operator["Operator"] -->|"Versioned control API"| Gateway
+    Gateway -->|"Provider adapter"| P1["Provider route A"]
+    Gateway -->|"Provider adapter"| P2["Provider route B"]
+    Gateway --> DB[(PostgreSQL)]
+    Gateway --> Collector["OpenTelemetry Collector"]
+    Collector --> Obs["Metrics, traces, and logs backends"]
+    Dashboard["Operator dashboard"] -->|"Control API only"| Gateway
+```
+
+The gateway is a modular monolith: data plane, control plane, routing, health,
+accounting, and storage run in one deployable Go process, while their package
+boundaries remain explicit. The mock provider is a second binary built from the
+same Go module for testing and demonstrations.
+
+## Data plane
+
+The data plane is latency- and cancellation-sensitive. A request follows this
+ordered path:
+
+1. Authenticate the application credential and resolve subject/run context.
+2. Parse the requested route or model group and validate required capabilities.
+3. Load a bounded policy/evidence snapshot and filter candidates.
+4. Apply affinity, deterministic ranking, and tie-breaking.
+5. Persist or enqueue the decision record before the upstream attempt.
+6. Translate the canonical request through one provider adapter.
+7. Stream events with backpressure and cancellation propagation.
+8. Before visible output only, classify eligible failures and consume a bounded
+   retry/fallback budget.
+9. Finalize attempt, usage, cost, latency, and decision evidence.
+
+The streaming path must not synchronously depend on the dashboard or an
+observability backend. Telemetry export failure cannot corrupt response bytes.
+
+## Control plane
+
+The versioned control API owns provider routes, application registrations,
+credentials, model groups, policies, probes, health evidence, usage queries,
+and audited administrative actions. The React dashboard consumes only this API;
+it never reads PostgreSQL or telemetry backends directly.
+
+Control-plane unavailability may prevent configuration changes and rich queries,
+but should not automatically interrupt an already configured data plane. The
+exact cached-read behavior is deferred until measured availability requirements
+justify it.
+
+## Backend package boundaries
+
+The planned package dependency direction is inward toward domain types:
+
+```text
+cmd/gateway
+    -> internal/app
+        -> auth, controlapi, telemetry
+        -> routing -> health
+        -> provider adapters -> protocol
+        -> accounting
+        -> storage implementations
+
+domain packages -> small consumer-owned interfaces
+infrastructure packages -> domain interfaces and models
+```
+
+| Package | Owns | Must not own |
+| --- | --- | --- |
+| `protocol` | Canonical requests, responses, events, capabilities, and errors | Provider-specific HTTP clients |
+| `provider` | Adapter contract and provider implementations | Routing policy |
+| `routing` | Candidate filtering, affinity, deterministic selection, retry budget | Raw provider wire formats |
+| `health` | Evidence, freshness, confidence, state transitions | Traffic selection side effects |
+| `auth` | Application/credential/principal context and authorization | Human application login |
+| `accounting` | Usage, cost, quota, and run/request attribution | Telemetry backend storage |
+| `telemetry` | Signal schemas, exporters, correlation, redaction | Business decisions inferred from metrics |
+| `storage` | PostgreSQL repositories and transaction boundaries | Domain policy |
+| `controlapi` | Versioned administrative HTTP contract | Direct dashboard coupling |
+| `app` | Construction, lifecycle, graceful shutdown | Domain behavior |
+
+Interfaces are defined by the consuming package and kept narrow. Shared utility
+packages are avoided unless at least two stable consumers need the same concept.
+
+## Storage boundaries
+
+PostgreSQL is the initial source of truth for configuration, identities,
+credential verifiers, policies, audit records, aggregates, and probe results.
+High-volume raw telemetry belongs in observability backends rather than in
+PostgreSQL. Prompt and completion bodies are not stored by default.
+
+The initial implementation uses explicit SQL with pgx and generated sqlc query
+bindings. Schema changes are versioned migrations. An external cache or Redis is
+not introduced until measurements demonstrate a requirement.
+
+## Observability flow
+
+- Go code emits traces and metrics through OpenTelemetry APIs.
+- Structured application logs use `log/slog` and include correlation fields.
+- An OpenTelemetry Collector decouples the process from chosen backends.
+- Metrics contain only bounded labels; request/user/run identifiers belong in
+  traces, logs, audit records, or decision records.
+- Active probes and synthetic traffic are marked at ingestion so they cannot
+  contaminate passive production statistics.
+
+## Deployment shape
+
+M1 uses one gateway instance, PostgreSQL, one mock provider, one real provider,
+and a local observability stack under Docker Compose. The gateway remains
+stateless where practical, but multi-instance claims are deferred until shared
+state, migrations, affinity, shutdown, and database-failure behavior have been
+tested explicitly.
+
+Service extraction requires evidence of at least one of:
+
+- materially different scaling characteristics;
+- a fault-isolation boundary that cannot be achieved in-process;
+- an independent security or deployment lifecycle;
+- measured contention that a package/process boundary cannot address.
+
+## Architectural invariants
+
+- Routing is constrained deterministic policy evaluation, never a free-form LLM
+  decision.
+- Provider wire quirks terminate at adapter boundaries.
+- Client-visible streaming bytes are emitted by exactly one attempt.
+- Administrative changes are authenticated, authorized, and audited.
+- Observability outages do not mutate routing behavior implicitly.
+- Health evidence retains source, freshness, sample size, and uncertainty.
+- No production package imports the mock provider or test-only control surface.
+
+## Deferred decisions
+
+- Concrete PostgreSQL high-availability topology.
+- Whether the gateway serves the built frontend or deploys it separately.
+- Redis or another distributed cache.
+- OIDC mechanism for cross-application principal linking.
+- Responses API internal unification details.
+- Active-probe scheduler distribution and leader election.

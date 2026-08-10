@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Product and architecture source
+    url: https://app.notion.com/p/3b46d181813e8194bb0bd5ba1c7d73ca
+    about: Review the product vision and non-goals before proposing scope.

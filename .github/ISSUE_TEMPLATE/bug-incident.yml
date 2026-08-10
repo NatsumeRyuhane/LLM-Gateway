@@ -1,0 +1,59 @@
+name: Bug or incident
+description: Report incorrect behavior, a reliability regression, or an incident.
+title: ""
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary and impact
+      description: What failed, who or what was affected, and for how long?
+    validations:
+      required: true
+  - type: dropdown
+    id: boundary
+    attributes:
+      label: Observed boundary
+      options:
+        - Gateway service
+        - Routing or route health
+        - Provider/upstream
+        - Protocol or streaming correctness
+        - Control plane/dashboard
+        - Security/privacy
+        - Unknown
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Provide deterministic steps, fault profile, workload, and version.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior and failure code
+      description: Include correlation IDs and redacted evidence, never credentials or content bodies.
+    validations:
+      required: true
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety checks
+      description: Was output visible, was fallback attempted, and could a tool call have been actionable?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted evidence
+      description: Attach relevant logs, traces, metrics, screenshots, or replay fixtures.
