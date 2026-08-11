@@ -106,6 +106,24 @@ func TestEncodeErrorUsesSafeOpenAIEnvelope(t *testing.T) {
 	}
 }
 
+func TestEncodeErrorRejectsInventedCodesAndUnsafeCorrelation(t *testing.T) {
+	failure := &protocol.CanonicalError{
+		Code: "invented.secret_code", Domain: protocol.DomainUpstream, RetryDisposition: protocol.RetryNever,
+		SafeMessage: "bounded", HTTPStatus: 418, RequestID: "req\nunsafe", AttemptID: "attempt\nunsafe", RouteID: "route\nunsafe",
+	}
+	encoded := NewCodec(protocol.DefaultLimits()).EncodeError(failure, CorrelationVisibility{AttemptID: true, RouteID: true})
+	if encoded.Status != 500 || encoded.Header.Get(HeaderRequestID) != "" || encoded.Header.Get(HeaderAttemptID) != "" || encoded.Header.Get(HeaderRouteID) != "" {
+		t.Fatalf("encoded status/headers = %d %#v", encoded.Status, encoded.Header)
+	}
+	var body publicErrorEnvelope
+	if err := json.Unmarshal(encoded.Body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Error.Code != string(protocol.FailureGatewayInternal) || body.Error.Type != "server_error" {
+		t.Fatalf("error = %#v", body.Error)
+	}
+}
+
 func TestEncodeModelsResponse(t *testing.T) {
 	encoded, err := NewCodec(protocol.DefaultLimits()).EncodeModelsResponse("req_models", []Model{{ID: "general", CreatedAt: time.Unix(10, 0), OwnedBy: "gateway"}})
 	if err != nil {

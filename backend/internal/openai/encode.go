@@ -181,7 +181,14 @@ func (c Codec) EncodeError(failure *protocol.CanonicalError, visibility Correlat
 	if failure == nil {
 		failure = encodingFailure("")
 	}
+	code := failure.Code
+	domain := failure.Domain
 	status := failure.HTTPStatus
+	if !knownPublicFailureCode(code) {
+		code = protocol.FailureGatewayInternal
+		domain = protocol.DomainGateway
+		status = http.StatusInternalServerError
+	}
 	if status < 400 || status > 599 {
 		status = http.StatusInternalServerError
 	}
@@ -199,7 +206,7 @@ func (c Codec) EncodeError(failure *protocol.CanonicalError, visibility Correlat
 		requestID = failure.RequestID
 	}
 	body, err := json.Marshal(publicErrorEnvelope{
-		Error:     publicError{Message: message, Type: publicErrorType(failure.Domain), Code: string(failure.Code), Param: parameter},
+		Error:     publicError{Message: message, Type: publicErrorType(domain), Code: string(code), Param: parameter},
 		RequestID: requestID,
 	})
 	if err != nil {
@@ -227,13 +234,13 @@ func encodeUsage(usage protocol.CanonicalUsage) *usageEnvelope {
 func responseHeaders(contentType, requestID, attemptID, routeID string, visibility CorrelationVisibility) http.Header {
 	header := make(http.Header)
 	header.Set("Content-Type", contentType)
-	if requestID != "" {
+	if validPublicIdentifier(requestID, 256) {
 		header.Set(HeaderRequestID, requestID)
 	}
-	if visibility.AttemptID && attemptID != "" {
+	if visibility.AttemptID && validPublicIdentifier(attemptID, 256) {
 		header.Set(HeaderAttemptID, attemptID)
 	}
-	if visibility.RouteID && routeID != "" {
+	if visibility.RouteID && validPublicIdentifier(routeID, 256) {
 		header.Set(HeaderRouteID, routeID)
 	}
 	return header
@@ -284,5 +291,27 @@ func encodingFailure(requestID string) *protocol.CanonicalError {
 		Code: protocol.FailureGatewayInternal, Domain: protocol.DomainGateway,
 		RetryDisposition: protocol.RetryNever, SafeMessage: "The gateway could not encode the response.",
 		HTTPStatus: http.StatusInternalServerError, RequestID: requestID,
+	}
+}
+
+func knownPublicFailureCode(code protocol.FailureCode) bool {
+	switch code {
+	case protocol.FailureClientInvalidRequest, protocol.FailureClientCancelled, protocol.FailureClientDeadlineExceeded,
+		protocol.FailureAuthMissingCredential, protocol.FailureAuthInvalidCredential, protocol.FailureAuthForbidden,
+		protocol.FailureQuotaGatewayExceeded, protocol.FailurePolicyUnknownTarget, protocol.FailurePolicyNoEligibleRoute,
+		protocol.FailurePolicyAllRoutesOpen, protocol.FailureCapabilityUnsupported, protocol.FailureAffinityRouteIneligible,
+		protocol.FailureGatewayOverloaded, protocol.FailureGatewayInternal, protocol.FailureGatewayShutdown,
+		protocol.FailureStorageUnavailable, protocol.FailureTelemetryExportFailed, protocol.FailureUpstreamDNSFailed,
+		protocol.FailureUpstreamConnectFailed, protocol.FailureUpstreamTLSFailed, protocol.FailureUpstreamTimeout,
+		protocol.FailureUpstreamStreamStalled, protocol.FailureUpstreamRedirectRejected, protocol.FailureUpstreamResponseTooLarge,
+		protocol.FailureUpstreamAuthenticationFailed, protocol.FailureUpstreamPermissionDenied, protocol.FailureUpstreamRateLimited,
+		protocol.FailureUpstreamServerError, protocol.FailureUpstreamContentPolicy, protocol.FailureUpstreamContextLimit,
+		protocol.FailureUpstreamInvalidStatus, protocol.FailureProtocolInvalidJSON, protocol.FailureProtocolInvalidSSE,
+		protocol.FailureProtocolEarlyEOF, protocol.FailureProtocolEmptyOutput, protocol.FailureProtocolInvalidEventOrder,
+		protocol.FailureProtocolInvalidToolCall, protocol.FailureProtocolInvalidStructured,
+		protocol.FailureProtocolUsageInconsistent, protocol.FailureProtocolParameterIgnored:
+		return true
+	default:
+		return false
 	}
 }

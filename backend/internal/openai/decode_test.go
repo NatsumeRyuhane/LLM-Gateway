@@ -187,6 +187,28 @@ func TestDecodeRejectsAmbiguousAndUnknownInput(t *testing.T) {
 	}
 }
 
+func TestDecodeAcceptsExplicitEmptyToolsWithNoneDefault(t *testing.T) {
+	validated, err := NewCodec(protocol.DefaultLimits()).DecodeChatCompletions(
+		newChatRequest(`{"model":"agent","messages":[{"role":"user","content":"hello"}],"tools":[]}`),
+		testMetadata,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if choice := validated.Canonical().ToolChoice; choice.Kind != protocol.ToolChoiceNone {
+		t.Fatalf("tool choice = %#v", choice)
+	}
+}
+
+func TestDecodeRejectsControlInAttribution(t *testing.T) {
+	request := newChatRequest(`{"model":"agent","messages":[{"role":"user","content":"hello"}]}`)
+	request.Header.Set(HeaderConversationID, "unsafe\u0085value")
+	_, err := NewCodec(protocol.DefaultLimits()).DecodeChatCompletions(request, testMetadata)
+	if err == nil || err.Validation == nil || err.Validation.Path != "headers.x-gateway-conversation-id" {
+		t.Fatalf("error = %#v", err)
+	}
+}
+
 func TestDecodeModelsRequest(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, ModelsPath, nil)
 	request.Header.Set("Accept", "application/json")
@@ -198,6 +220,79 @@ func TestDecodeModelsRequest(t *testing.T) {
 	if value, present := decoded.Attribution.ConversationID.Get(); !present || value != "conversation" {
 		t.Fatalf("conversation = (%q,%v)", value, present)
 	}
+}
+
+func TestExistingCapabilityFixturesPassThroughPublicDecoder(t *testing.T) {
+	t.Run("message participant name", func(t *testing.T) {
+		data := readFixture(t, "capabilities", "message-participant-name.json")
+		var fixture struct {
+			ContractVersion string `json:"contract_version"`
+			Cases           []struct {
+				CanonicalRequest struct {
+					Messages []struct {
+						Role    string   `json:"role"`
+						Name    string   `json:"name"`
+						Content []string `json:"content"`
+					} `json:"messages"`
+				} `json:"canonical_request"`
+			} `json:"cases"`
+		}
+		if err := json.Unmarshal(data, &fixture); err != nil {
+			t.Fatal(err)
+		}
+		message := fixture.Cases[0].CanonicalRequest.Messages[0]
+		body, err := json.Marshal(map[string]any{"model": "agent", "messages": []any{map[string]any{"role": message.Role, "name": message.Name, "content": message.Content[0]}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		validated, decodeErr := NewCodec(protocol.DefaultLimits()).DecodeChatCompletions(newChatRequest(string(body)), testMetadata)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		name, present := validated.Canonical().Messages[0].Name.Get()
+		if fixture.ContractVersion != protocol.ContractVersion || !present || name != "caller" {
+			t.Fatalf("decoded participant name = (%q,%v)", name, present)
+		}
+	})
+
+	t.Run("strict function schema", func(t *testing.T) {
+		data := readFixture(t, "capabilities", "tools-function-schema-strict.json")
+		var fixture struct {
+			ContractVersion string `json:"contract_version"`
+			Cases           []struct {
+				CanonicalRequest struct {
+					Tools []struct {
+						Name       string          `json:"name"`
+						Parameters json.RawMessage `json:"parameters"`
+						Strict     bool            `json:"strict"`
+					} `json:"tools"`
+				} `json:"canonical_request"`
+			} `json:"cases"`
+		}
+		if err := json.Unmarshal(data, &fixture); err != nil {
+			t.Fatal(err)
+		}
+		tool := fixture.Cases[0].CanonicalRequest.Tools[0]
+		var parameters any
+		if err := json.Unmarshal(tool.Parameters, &parameters); err != nil {
+			t.Fatal(err)
+		}
+		body, err := json.Marshal(map[string]any{
+			"model": "agent", "messages": []any{map[string]any{"role": "user", "content": "hello"}},
+			"tools": []any{map[string]any{"type": "function", "function": map[string]any{"name": tool.Name, "parameters": parameters, "strict": tool.Strict}}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		validated, decodeErr := NewCodec(protocol.DefaultLimits()).DecodeChatCompletions(newChatRequest(string(body)), testMetadata)
+		if decodeErr != nil {
+			t.Fatal(decodeErr)
+		}
+		strict, present := validated.Canonical().Tools[0].Strict.Get()
+		if fixture.ContractVersion != protocol.ContractVersion || !present || !strict {
+			t.Fatalf("decoded strict = (%v,%v)", strict, present)
+		}
+	})
 }
 
 func FuzzDecodeChatCompletionsNeverPanics(f *testing.F) {
@@ -215,4 +310,15 @@ func newChatRequest(body string) *http.Request {
 	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, bytes.NewBufferString(body))
 	request.Header.Set("Content-Type", "application/json")
 	return request
+}
+
+func readFixture(t testing.TB, parts ...string) []byte {
+	t.Helper()
+	pathParts := []string{"..", "..", "..", "tests", "conformance", "gateway.adapter.v0"}
+	pathParts = append(pathParts, parts...)
+	data, err := os.ReadFile(filepath.Join(pathParts...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }

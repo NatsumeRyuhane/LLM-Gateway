@@ -50,3 +50,9 @@ func TestAcceptSelectionConformanceFixture(t *testing.T) {
 		})
 	}
 }
+
+func TestAcceptSelectionRejectsOutOfGrammarQualityPrecision(t *testing.T) {
+	if _, err := SelectRepresentation("application/json;q=0.1234", false); err == nil {
+		t.Fatal("SelectRepresentation() accepted an HTTP qvalue with excessive precision")
+	}
+}

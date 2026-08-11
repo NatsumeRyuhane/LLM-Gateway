@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"mime"
 	"net/http"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/NatsumeRyuhane/LLM-Gateway/backend/internal/protocol"
 )
@@ -26,6 +29,7 @@ const (
 )
 
 var rejectedAccountHeaders = []string{"OpenAI-Organization", "OpenAI-Project"}
+var qualityPattern = regexp.MustCompile(`^(?:0(?:\.[0-9]{0,3})?|1(?:\.0{0,3})?)$`)
 
 func validateEndpoint(request *http.Request, method, path string) *protocol.CanonicalError {
 	if request == nil {
@@ -34,7 +38,7 @@ func validateEndpoint(request *http.Request, method, path string) *protocol.Cano
 	if request.Method != method {
 		return invalidRequest("method", "is not supported for this endpoint")
 	}
-	if request.URL == nil || request.URL.Path != path || request.URL.RawQuery != "" || request.URL.ForceQuery {
+	if request.URL == nil || request.URL.Path != path || request.URL.RawPath != "" || request.URL.RawQuery != "" || request.URL.ForceQuery {
 		return invalidRequest("path", "must match the endpoint exactly without a query string")
 	}
 	for _, header := range rejectedAccountHeaders {
@@ -95,8 +99,9 @@ func SelectRepresentation(header string, stream bool) (string, *protocol.Canonic
 			if !found || !strings.EqualFold(strings.TrimSpace(name), "q") || strings.TrimSpace(value) == "" {
 				return "", invalidRequest("headers.accept", "contains an invalid quality parameter")
 			}
-			parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-			if err != nil || parsed < 0 || parsed > 1 || strings.ContainsAny(strings.TrimSpace(value), "eE+-") {
+			qualityValue := strings.TrimSpace(value)
+			parsed, err := strconv.ParseFloat(qualityValue, 64)
+			if err != nil || !qualityPattern.MatchString(qualityValue) {
 				return "", invalidRequest("headers.accept", "contains an invalid quality value")
 			}
 			quality = parsed
@@ -177,7 +182,7 @@ func decodeAttributionHeader(headers http.Header, name string, maximum int) (pro
 	normalized := ""
 	for index, value := range values {
 		value = strings.TrimSpace(value)
-		if value == "" || len(value) > maximum || strings.ContainsAny(value, "\r\n") {
+		if value == "" || !utf8.ValidString(value) || len(value) > maximum || containsUnicodeControl(value) {
 			return protocol.None[string](), invalidRequest(path, "must be a bounded non-empty identifier")
 		}
 		if index == 0 {
@@ -189,6 +194,15 @@ func decodeAttributionHeader(headers http.Header, name string, maximum int) (pro
 		}
 	}
 	return protocol.Some(normalized), nil
+}
+
+func containsUnicodeControl(value string) bool {
+	for _, character := range value {
+		if unicode.IsControl(character) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatArrayPath(path string, index int) string {

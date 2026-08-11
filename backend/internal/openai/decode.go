@@ -183,7 +183,9 @@ func (c Codec) decodeChatBody(body []byte, metadata RequestMetadata) (protocol.C
 			return protocol.CanonicalChatRequest{}, err
 		}
 		canonical.Tools = tools
-		canonical.ToolChoice.Kind = protocol.ToolChoiceAuto
+		if len(tools) != 0 {
+			canonical.ToolChoice.Kind = protocol.ToolChoiceAuto
+		}
 	}
 	if raw, present := object["tool_choice"]; present {
 		choice, err := decodeToolChoice(raw)
