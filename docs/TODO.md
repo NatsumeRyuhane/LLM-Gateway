@@ -18,9 +18,14 @@ backlog.
 | [#8](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/8) | Observability, privacy, and cardinality contract | Complete in contract pack |
 | [#9](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/9) | Go modular-monolith backend scaffold | Implemented with two commands, explicit package boundaries, bounded lifecycle, health semantics, and CI checks |
 
+## M1 — Observable BYOK streaming vertical slice
+
+| Issue | Deliverable | Status |
+| --- | --- | --- |
+| [#17](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/17) | Canonical Chat Completions protocol core | Implemented with immutable validated requests, derived capabilities, bounded schema/tool/usage validation, and buffered/stream terminal state machines |
+
 ## Later milestones
 
-- M1: observable BYOK streaming vertical slice.
 - M2: multi-route passive reliability and operator views.
 - M3: active probes, health estimation, and drift baselines.
 - M4: explainable policy routing and agent depth.

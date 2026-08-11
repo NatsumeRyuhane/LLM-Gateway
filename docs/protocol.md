@@ -19,6 +19,57 @@ The public v0 surface is intentionally smaller than the current OpenAI API. The
 conditional, unsupported, and deferred wire fields. Unknown fields are rejected;
 there is no implicit provider passthrough mode.
 
+### Go protocol core
+
+`backend/internal/protocol` materializes this contract without importing
+`net/http`, provider wire models, routing policy, or credential types. Public
+codecs construct `CanonicalChatRequest` values and call `ValidateChatRequest`.
+The result is an immutable snapshot: `Canonical()` returns a deep copy and
+`RequiredCapabilities()` returns a sorted copy of the capability set derived
+from explicit request semantics. `Optional[T]` preserves absent values separately
+from explicit zero values such as `temperature: 0` or
+`parallel_tool_calls: false`.
+
+Buffered adapters call `ValidateChatResponse` before committing a successful
+public response. Streaming adapters create one `StreamValidator` per attempt,
+pass every `CanonicalEvent` through `Accept`, and call `FinalizeEOF` when the
+transport ends. `Successful()` becomes true only after a validated
+`response.completed`; a valid `response.failed` or `response.cancelled` is a
+canonical terminal outcome but never a successful generation.
+
+The v0 supported JSON Schema subset is intentionally local and deterministic:
+
+- annotations: `$schema`, `title`, `description`, `default`, and `examples`;
+- composition and values: `type`, `enum`, `const`, `anyOf`, `oneOf`, and
+  `allOf`;
+- objects and arrays: `properties`, `required`, `additionalProperties`, `items`,
+  `minItems`, `maxItems`, `uniqueItems`, `minProperties`, and `maxProperties`;
+- strings and numbers: `minLength`, `maxLength`, Go RE2 `pattern`, `minimum`,
+  `maximum`, `exclusiveMinimum`, and `exclusiveMaximum`.
+
+Unsupported keywords, including references and remote resolution, fail request
+validation. Function parameter schemas must allow a JSON object. Complete tool
+arguments and structured output are parsed and validated locally; validation
+never performs filesystem, DNS, or network access.
+
+Default protocol limits are explicit and may be lowered by route or deployment
+configuration without truncating data:
+
+| Value | Default |
+| --- | ---: |
+| Opaque identifier / attribution ID | 128 bytes |
+| Target | 256 bytes |
+| Messages / content parts per message | 128 / 256 |
+| Message / aggregate request content | 1 MiB / 4 MiB |
+| Participant / function name | 64 / 64 bytes |
+| Tools / tool calls per message | 128 / 128 |
+| Tool description / assembled arguments | 8 KiB / 1 MiB |
+| Schema bytes / JSON nesting depth | 128 KiB / 32 |
+| Stop sequences / bytes per sequence | 4 / 1 KiB |
+| Maximum output-token bound | 1,000,000 |
+| Event delta / assembled response text | 1 MiB / 4 MiB |
+| Safe failure message | 1 KiB |
+
 ## Layer boundaries
 
 ```text
