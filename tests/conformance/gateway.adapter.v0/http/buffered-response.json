@@ -1,0 +1,5 @@
+{
+  "contract_version": "gateway.adapter.v0",
+  "semantic": "http.buffered_chat_completion",
+  "expected_body": {"id":"resp_1","object":"chat.completion","created":1700000000,"model":"agent","choices":[{"index":0,"message":{"role":"assistant","content":"hello","refusal":"cannot comply","tool_calls":[{"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{\"query\":\"x\"}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":12,"completion_tokens":4,"total_tokens":16,"prompt_tokens_details":{"cached_tokens":3},"completion_tokens_details":{"reasoning_tokens":2}}}
+}
