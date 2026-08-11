@@ -197,6 +197,58 @@ func TestValidateChatRequestChecksToolHistoryAndSchema(t *testing.T) {
 	}
 }
 
+func TestValidateChatRequestEnforcesBoundsBeforeToolArgumentDecoding(t *testing.T) {
+	t.Parallel()
+
+	twoToolCalls := func() []CanonicalToolCall {
+		return []CanonicalToolCall{
+			{ID: "a", Name: "f", Arguments: `{}`},
+			{ID: "b", Name: "f", Arguments: `{}`},
+		}
+	}
+	tests := []struct {
+		name string
+		edit func(*CanonicalChatRequest, *Limits)
+		path string
+	}{
+		{"message bytes", func(request *CanonicalChatRequest, limits *Limits) {
+			request.Messages = []CanonicalMessage{{Role: RoleAssistant, ToolCalls: twoToolCalls()}}
+			limits.MaxMessageBytes = 7
+		}, "messages[0]"},
+		{"request content bytes", func(request *CanonicalChatRequest, limits *Limits) {
+			request.Messages = []CanonicalMessage{{Role: RoleAssistant, ToolCalls: twoToolCalls()}}
+			limits.MaxRequestContentBytes = 7
+		}, "messages"},
+		{"tool arguments bytes", func(request *CanonicalChatRequest, limits *Limits) {
+			request.Messages = []CanonicalMessage{{Role: RoleAssistant, ToolCalls: []CanonicalToolCall{{ID: "a", Name: "f", Arguments: `{}`}}}}
+			limits.MaxToolArgumentsBytes = 1
+		}, "messages[0].tool_calls[0].arguments"},
+		{"content parts", func(request *CanonicalChatRequest, limits *Limits) {
+			request.Messages[0].Content = []CanonicalContentPart{{Type: ContentText, Text: "a"}, {Type: ContentText, Text: "b"}}
+			limits.MaxContentParts = 1
+		}, "messages[0].content"},
+		{"tool calls", func(request *CanonicalChatRequest, limits *Limits) {
+			request.Messages = []CanonicalMessage{{Role: RoleAssistant, ToolCalls: twoToolCalls()}}
+			limits.MaxToolCallsPerMessage = 1
+		}, "messages[0].tool_calls"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			request := validRequest()
+			limits := DefaultLimits()
+			test.edit(&request, &limits)
+			_, err := ValidateChatRequest(request, limits)
+			if err == nil || err.Code != FailureClientInvalidRequest || err.RetryDisposition != RetryNever {
+				t.Fatalf("ValidateChatRequest() error = %#v", err)
+			}
+			if err.Validation == nil || err.Validation.Path != test.path {
+				t.Fatalf("validation = %#v, want path %q", err.Validation, test.path)
+			}
+		})
+	}
+}
+
 func TestRouteCapabilitiesRejectUnverifiedRequirements(t *testing.T) {
 	t.Parallel()
 

@@ -221,6 +221,45 @@ func TestStreamValidatorAcceptsExplicitFailedTerminalWithoutCallingItSuccess(t *
 	}
 }
 
+func TestStreamValidatorPoisonsAfterFirstRejectedEvent(t *testing.T) {
+	t.Parallel()
+
+	validator := newTextStreamValidator(t)
+	first := validator.Accept(withText(streamEvent(EventOutputTextDelta, 1), "before start"))
+	if first == nil || first.Code != FailureProtocolInvalidEventOrder {
+		t.Fatalf("first error = %#v", first)
+	}
+	if validator.State() != StreamFailed || validator.Successful() {
+		t.Fatalf("state = %s, successful = %v", validator.State(), validator.Successful())
+	}
+	for _, event := range []CanonicalEvent{
+		streamEvent(EventResponseStarted, 2),
+		withText(streamEvent(EventOutputTextDelta, 3), "ignored"),
+		withFinish(streamEvent(EventResponseCompleted, 4), FinishStop),
+	} {
+		err := validator.Accept(event)
+		if err == nil || err.Error() != first.Error() {
+			t.Fatalf("Accept(%s) error = %#v, want first rejection", event.Type, err)
+		}
+	}
+	if err := validator.FinalizeEOF(); err == nil || err.Error() != first.Error() {
+		t.Fatalf("FinalizeEOF() error = %#v, want first rejection", err)
+	}
+	if validator.Successful() {
+		t.Fatal("rejected stream became successful")
+	}
+}
+
+func TestInternalStreamFailureUsesGatewayEnvelope(t *testing.T) {
+	t.Parallel()
+
+	var validator *StreamValidator
+	err := validator.Accept(CanonicalEvent{})
+	if err == nil || err.Code != FailureGatewayInternal || err.Domain != DomainGateway || err.HTTPStatus != 500 {
+		t.Fatalf("nil validator error = %#v", err)
+	}
+}
+
 func TestStreamSequenceMonotonicProperty(t *testing.T) {
 	t.Parallel()
 

@@ -1,6 +1,9 @@
 package protocol
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // FailureCode is an append-only stable failure taxonomy identifier.
 type FailureCode string
@@ -135,14 +138,57 @@ func protocolFailure(code FailureCode, safeMessage, path, rule string, outputVis
 	if outputVisible || toolActionable {
 		retry = RetryClientDecides
 	}
+	domain, status := failureEnvelopeMetadata(code)
 	return &CanonicalError{
 		Code:             code,
-		Domain:           DomainProtocol,
+		Domain:           domain,
 		RetryDisposition: retry,
 		SafeMessage:      safeMessage,
-		HTTPStatus:       502,
+		HTTPStatus:       status,
 		OutputVisible:    outputVisible,
 		ToolActionable:   toolActionable,
 		Validation:       &ValidationIssue{Path: path, Rule: rule},
+	}
+}
+
+func failureEnvelopeMetadata(code FailureCode) (FailureDomain, int) {
+	switch code {
+	case FailureClientCancelled:
+		return DomainClient, 499
+	case FailureClientDeadlineExceeded:
+		return DomainClient, 408
+	case FailureAuthMissingCredential, FailureAuthInvalidCredential:
+		return DomainAuth, 401
+	case FailureAuthForbidden:
+		return DomainAuth, 403
+	case FailureQuotaGatewayExceeded:
+		return DomainQuota, 429
+	case FailurePolicyUnknownTarget:
+		return DomainPolicy, 404
+	case FailurePolicyNoEligibleRoute, FailurePolicyAllRoutesOpen:
+		return DomainPolicy, 503
+	case FailureCapabilityUnsupported:
+		return DomainCapability, 400
+	case FailureAffinityRouteIneligible:
+		return DomainAffinity, 409
+	case FailureGatewayOverloaded, FailureGatewayShutdown:
+		return DomainGateway, 503
+	case FailureGatewayInternal:
+		return DomainGateway, 500
+	case FailureStorageUnavailable:
+		return DomainStorage, 503
+	case FailureTelemetryExportFailed:
+		return DomainTelemetry, 500
+	}
+	prefix, _, _ := strings.Cut(string(code), ".")
+	switch FailureDomain(prefix) {
+	case DomainClient:
+		return DomainClient, 400
+	case DomainUpstream:
+		return DomainUpstream, 502
+	case DomainProtocol:
+		return DomainProtocol, 502
+	default:
+		return DomainGateway, 500
 	}
 }

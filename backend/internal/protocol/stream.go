@@ -34,8 +34,9 @@ const (
 )
 
 // CanonicalEvent is a tagged union. Only fields belonging to Type may be set.
-// Text carries output/refusal/tool-argument deltas; tool fragments are validated
-// as UTF-8 only after exact assembly so a provider chunk may split a code point.
+// Adapters must buffer partial runes and emit complete UTF-8 output-text and
+// refusal deltas. Tool-argument fragments may split a code point because their
+// exact assembled JSON is validated as UTF-8 when the tool call completes.
 type CanonicalEvent struct {
 	Type       EventType
 	RequestID  string
@@ -84,6 +85,7 @@ type StreamValidator struct {
 	usage        Optional[CanonicalUsage]
 	finish       FinishReason
 	failure      *CanonicalError
+	rejected     bool
 
 	outputVisible  bool
 	toolActionable bool
@@ -121,17 +123,20 @@ func (v *StreamValidator) Accept(event CanonicalEvent) *CanonicalError {
 	if v == nil {
 		return protocolFailure(FailureGatewayInternal, "The gateway could not validate the upstream response.", "stream", "validator is nil", false, false)
 	}
+	if v.rejected {
+		return cloneCanonicalError(v.failure)
+	}
 	if v.isTerminal() {
-		return v.eventOrderFailure("event.type", "no event may follow a terminal event")
+		return v.reject(v.eventOrderFailure("event.type", "no event may follow a terminal event"))
 	}
 	if event.RequestID != v.request.request.RequestID || event.AttemptID != v.attemptID || event.RouteID != v.routeID {
-		return v.eventOrderFailure("event", "request, attempt, and route identifiers must remain stable")
+		return v.reject(v.eventOrderFailure("event", "request, attempt, and route identifiers must remain stable"))
 	}
 	if event.Sequence == 0 || event.Sequence <= v.lastSequence {
-		return v.eventOrderFailure("event.sequence", "must increase strictly")
+		return v.reject(v.eventOrderFailure("event.sequence", "must increase strictly"))
 	}
 	if event.ObservedAt.IsZero() || (!v.lastObserved.IsZero() && event.ObservedAt.Before(v.lastObserved)) {
-		return v.eventOrderFailure("event.observed_at", "must be set and monotonic")
+		return v.reject(v.eventOrderFailure("event.observed_at", "must be set and monotonic"))
 	}
 
 	var err *CanonicalError
@@ -160,7 +165,7 @@ func (v *StreamValidator) Accept(event CanonicalEvent) *CanonicalError {
 		err = v.eventOrderFailure("event.type", "is not recognized")
 	}
 	if err != nil {
-		return err
+		return v.reject(err)
 	}
 	v.lastSequence = event.Sequence
 	v.lastObserved = event.ObservedAt
@@ -173,6 +178,9 @@ func (v *StreamValidator) FinalizeEOF() *CanonicalError {
 	if v == nil {
 		return protocolFailure(FailureGatewayInternal, "The gateway could not validate the upstream response.", "stream", "validator is nil", false, false)
 	}
+	if v.rejected {
+		return cloneCanonicalError(v.failure)
+	}
 	if v.isTerminal() {
 		return nil
 	}
@@ -181,7 +189,7 @@ func (v *StreamValidator) FinalizeEOF() *CanonicalError {
 
 // Successful reports a validated response.completed terminal state.
 func (v *StreamValidator) Successful() bool {
-	return v != nil && v.state == StreamCompleted
+	return v != nil && !v.rejected && v.state == StreamCompleted
 }
 
 // Result returns the canonical assembled result only after successful terminal
@@ -424,12 +432,23 @@ func (v *StreamValidator) eventOrderFailure(path, rule string) *CanonicalError {
 
 func (v *StreamValidator) streamFailure(code FailureCode, path, rule string) *CanonicalError {
 	message := "The upstream stream is invalid."
-	if code == FailureProtocolInvalidToolCall {
+	switch code {
+	case FailureProtocolInvalidToolCall:
 		message = "The upstream tool call is invalid."
-	} else if code == FailureProtocolUsageInconsistent {
+	case FailureProtocolUsageInconsistent:
 		message = "The upstream usage is inconsistent."
 	}
 	return protocolFailure(code, message, path, rule, v.outputVisible, v.toolActionable)
+}
+
+func (v *StreamValidator) reject(err *CanonicalError) *CanonicalError {
+	if v.rejected {
+		return cloneCanonicalError(v.failure)
+	}
+	v.failure = cloneCanonicalError(err)
+	v.state = StreamFailed
+	v.rejected = true
+	return err
 }
 
 func (v *StreamValidator) withVisibility(err *CanonicalError) *CanonicalError {
@@ -504,8 +523,8 @@ func knownFailureDomain(domain FailureDomain) bool {
 }
 
 func failureCodeMatchesDomain(code FailureCode, domain FailureDomain) bool {
-	prefix, _, _ := strings.Cut(string(code), ".")
-	return prefix == string(domain)
+	expected, _ := failureEnvelopeMetadata(code)
+	return expected == domain
 }
 
 func cloneCanonicalError(source *CanonicalError) *CanonicalError {

@@ -296,6 +296,13 @@ func validateRequestMessages(messages []CanonicalMessage, toolSchemas map[string
 			required.add(CapabilityToolsFunction)
 			for callIndex, call := range message.ToolCalls {
 				callPath := fmt.Sprintf("%s.tool_calls[%d]", path, callIndex)
+				messageBytes += len(call.ID) + len(call.Name) + len(call.Arguments)
+				if messageBytes > limits.MaxMessageBytes {
+					return invalidRequest(path, "exceeds the per-message byte limit")
+				}
+				if totalBytes+messageBytes > limits.MaxRequestContentBytes {
+					return invalidRequest("messages", "exceeds the request-content byte limit")
+				}
 				if err := validateOpaqueIdentifier(call.ID, limits.MaxIdentifierBytes, callPath+".id"); err != nil {
 					return err
 				}
@@ -318,7 +325,6 @@ func validateRequestMessages(messages []CanonicalMessage, toolSchemas map[string
 					}
 				}
 				outstanding[call.ID] = struct{}{}
-				messageBytes += len(call.ID) + len(call.Name) + len(call.Arguments)
 			}
 		}
 		toolCallID, hasToolCallID := message.ToolCallID.Get()

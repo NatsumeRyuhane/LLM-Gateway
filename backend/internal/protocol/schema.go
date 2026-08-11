@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"strconv"
+	"strings"
 	"unicode/utf8"
 )
 
@@ -112,7 +113,8 @@ func validateSchemaNode(schema map[string]any, path string, depth, maxDepth int)
 		if !ok {
 			return &schemaViolation{path: path + ".properties", rule: "must be an object"}
 		}
-		for name, child := range object {
+		for _, name := range sortedMapKeys(object) {
+			child := object[name]
 			childSchema, ok := child.(map[string]any)
 			if !ok {
 				return &schemaViolation{path: path + ".properties." + name, rule: "must be a schema object"}
@@ -203,9 +205,13 @@ func validateSchemaNode(schema map[string]any, path string, depth, maxDepth int)
 		if !ok {
 			return &schemaViolation{path: path + ".pattern", rule: "must be a string"}
 		}
-		if _, err := regexp.Compile(text); err != nil {
+		expression, err := regexp.Compile(text)
+		if err != nil {
 			return &schemaViolation{path: path + ".pattern", rule: "must be a valid regular expression"}
 		}
+		// Parsed schema maps are private validated snapshots. Retain the compiled
+		// expression so every matching value reuses it without a panic path.
+		schema["pattern"] = expression
 	}
 	if unique, ok := schema["uniqueItems"]; ok {
 		if _, ok := unique.(bool); !ok {
@@ -248,6 +254,8 @@ func validateSchemaType(value any, path string) *schemaViolation {
 }
 
 func validateJSONAgainstSchema(value any, schema map[string]any, path string) *schemaViolation {
+	// schema must originate from parseSchema. validateSchemaNode establishes the
+	// asserted map/string shapes below and caches compiled regular expressions.
 	if choices, ok := schema["allOf"].([]any); ok {
 		for _, choice := range choices {
 			if violation := validateJSONAgainstSchema(value, choice.(map[string]any), path); violation != nil {
@@ -333,7 +341,8 @@ func validateObjectConstraints(value map[string]any, schema map[string]any, path
 		}
 	}
 	properties, _ := schema["properties"].(map[string]any)
-	for name, child := range value {
+	for _, name := range sortedMapKeys(value) {
+		child := value[name]
 		if propertySchema, ok := properties[name].(map[string]any); ok {
 			if violation := validateJSONAgainstSchema(child, propertySchema, path+"."+name); violation != nil {
 				return violation
@@ -364,12 +373,13 @@ func validateArrayConstraints(value []any, schema map[string]any, path string) *
 		return &schemaViolation{path: path, rule: "has too many items"}
 	}
 	if unique, _ := schema["uniqueItems"].(bool); unique {
-		for left := range value {
-			for right := left + 1; right < len(value); right++ {
-				if jsonValuesEqual(value[left], value[right]) {
-					return &schemaViolation{path: path, rule: "must contain unique items"}
-				}
+		seen := make(map[string]struct{}, len(value))
+		for _, item := range value {
+			key := canonicalJSONKey(item)
+			if _, duplicate := seen[key]; duplicate {
+				return &schemaViolation{path: path, rule: "must contain unique items"}
 			}
+			seen[key] = struct{}{}
 		}
 	}
 	if itemSchema, ok := schema["items"].(map[string]any); ok {
@@ -390,7 +400,7 @@ func validateStringConstraints(value string, schema map[string]any, path string)
 	if maximum, ok := schemaInteger(schema, "maxLength"); ok && length > maximum {
 		return &schemaViolation{path: path, rule: "is longer than allowed"}
 	}
-	if pattern, ok := schema["pattern"].(string); ok && !regexp.MustCompile(pattern).MatchString(value) {
+	if pattern, ok := schema["pattern"].(*regexp.Regexp); ok && !pattern.MatchString(value) {
 		return &schemaViolation{path: path, rule: "does not match the required pattern"}
 	}
 	return nil
@@ -532,4 +542,69 @@ func jsonValuesEqual(left, right any) bool {
 		return true
 	}
 	return reflect.DeepEqual(left, right)
+}
+
+func sortedMapKeys[T any](values map[string]T) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+// canonicalJSONKey mirrors jsonValuesEqual semantics, including numeric
+// equivalence, while producing collision-free type- and length-tagged keys.
+func canonicalJSONKey(value any) string {
+	var key strings.Builder
+	appendCanonicalJSONKey(&key, value)
+	return key.String()
+}
+
+func appendCanonicalJSONKey(key *strings.Builder, value any) {
+	switch typed := value.(type) {
+	case nil:
+		key.WriteString("n;")
+	case bool:
+		if typed {
+			key.WriteString("b1;")
+		} else {
+			key.WriteString("b0;")
+		}
+	case string:
+		writeLengthTagged(key, "s", typed)
+	case json.Number:
+		number, ok := numberRat(typed)
+		if !ok {
+			writeLengthTagged(key, "d", typed.String())
+			return
+		}
+		writeLengthTagged(key, "d", number.RatString())
+	case []any:
+		key.WriteString("a")
+		key.WriteString(strconv.Itoa(len(typed)))
+		key.WriteByte('[')
+		for _, item := range typed {
+			appendCanonicalJSONKey(key, item)
+		}
+		key.WriteByte(']')
+	case map[string]any:
+		key.WriteString("o")
+		key.WriteString(strconv.Itoa(len(typed)))
+		key.WriteByte('{')
+		for _, name := range sortedMapKeys(typed) {
+			writeLengthTagged(key, "k", name)
+			appendCanonicalJSONKey(key, typed[name])
+		}
+		key.WriteByte('}')
+	default:
+		writeLengthTagged(key, "u", fmt.Sprintf("%T", typed))
+	}
+}
+
+func writeLengthTagged(key *strings.Builder, tag, value string) {
+	key.WriteString(tag)
+	key.WriteString(strconv.Itoa(len(value)))
+	key.WriteByte(':')
+	key.WriteString(value)
 }

@@ -81,6 +81,13 @@ func TestValidateChatResponseValidatesToolsAndUsage(t *testing.T) {
 		{"schema mismatch", func(r *CanonicalChatResponse) { r.Message.ToolCalls[0].Arguments = `{"unknown":true}` }, FailureProtocolInvalidToolCall},
 		{"unknown function", func(r *CanonicalChatResponse) { r.Message.ToolCalls[0].Name = "missing" }, FailureProtocolInvalidToolCall},
 		{"wrong finish", func(r *CanonicalChatResponse) { r.FinishReason = FinishStop }, FailureProtocolInvalidEventOrder},
+		{"duplicate tool call id", func(r *CanonicalChatResponse) {
+			r.Message.ToolCalls = append(r.Message.ToolCalls, r.Message.ToolCalls[0])
+		}, FailureProtocolInvalidToolCall},
+		{"empty output", func(r *CanonicalChatResponse) {
+			r.Message.ToolCalls = nil
+			r.FinishReason = FinishStop
+		}, FailureProtocolEmptyOutput},
 		{"usage sum", func(r *CanonicalChatResponse) {
 			r.Usage = Some(CanonicalUsage{InputTokens: 2, OutputTokens: 2, TotalTokens: 3, Provenance: UsageProviderReported})
 		}, FailureProtocolUsageInconsistent},
@@ -95,6 +102,39 @@ func TestValidateChatResponseValidatesToolsAndUsage(t *testing.T) {
 				t.Fatalf("ValidateChatResponse() error = %#v, want %s", err, test.code)
 			}
 		})
+	}
+}
+
+func TestValidateChatResponseRejectsParallelCallsAndOversizedText(t *testing.T) {
+	t.Parallel()
+
+	requestValue := validRequest()
+	requestValue.Tools = []CanonicalFunctionTool{{Name: "tool", Parameters: NewJSONSchema([]byte(`{"type":"object"}`))}}
+	requestValue.ToolChoice = ToolChoice{Kind: ToolChoiceAuto}
+	requestValue.ParallelToolCalls = Some(false)
+	request := mustValidateRequest(t, requestValue)
+	response := validResponse(request)
+	response.Message.Content = nil
+	response.Message.ToolCalls = []CanonicalToolCall{
+		{ID: "call-1", Name: "tool", Arguments: `{}`},
+		{ID: "call-2", Name: "tool", Arguments: `{}`},
+	}
+	response.FinishReason = FinishToolCalls
+	_, err := ValidateChatResponse(response, request)
+	if err == nil || err.Code != FailureProtocolInvalidToolCall {
+		t.Fatalf("parallel false error = %#v", err)
+	}
+
+	limits := DefaultLimits()
+	limits.MaxResponseTextBytes = 4
+	textRequest, requestErr := ValidateChatRequest(validRequest(), limits)
+	if requestErr != nil {
+		t.Fatalf("ValidateChatRequest() error = %v", requestErr)
+	}
+	textResponse := validResponse(textRequest)
+	_, err = ValidateChatResponse(textResponse, textRequest)
+	if err == nil || err.Code != FailureUpstreamResponseTooLarge || err.Domain != DomainUpstream || err.HTTPStatus != 502 {
+		t.Fatalf("oversized response error = %#v", err)
 	}
 }
 
