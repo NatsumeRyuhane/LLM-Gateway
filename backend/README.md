@@ -60,8 +60,11 @@ the rejected variable without repeating its value.
 - `internal/app` owns construction and the bounded HTTP lifecycle.
 - `internal/config` owns configuration loading and validation.
 - `internal/health` owns process and route-health state.
-- `internal/auth`, `protocol`, `provider`, `routing`, `accounting`, `telemetry`,
-  `storage`, and `controlapi` reserve the accepted domain boundaries for the
+- `internal/protocol` owns provider-neutral Chat Completions requests, responses,
+  capabilities, failures, bounded JSON Schema validation, and stream lifecycle
+  enforcement.
+- `internal/auth`, `provider`, `routing`, `accounting`, `telemetry`, `storage`,
+  and `controlapi` reserve the remaining accepted domain boundaries for the
   vertical slice.
 
 Unit tests stay beside their packages. Root `tests/` remains reserved for
