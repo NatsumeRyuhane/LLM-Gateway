@@ -1,0 +1,46 @@
+{
+  "contract_version": "gateway.adapter.v0",
+  "semantic": "http.chat_request_decoding",
+  "cases": [
+    {
+      "name": "string-content-normalizes-to-one-text-part",
+      "body": {"model":"general","messages":[{"role":"user","content":"hello"}]},
+      "expected": {"target":"general","content":["hello"],"stream":false}
+    },
+    {
+      "name": "text-array-preserves-ordered-parts",
+      "body": {"model":"general","messages":[{"role":"user","content":[{"type":"text","text":"hello"},{"type":"text","text":" world"}]}]},
+      "expected": {"target":"general","content":["hello"," world"],"stream":false}
+    },
+    {
+      "name": "legacy-output-limit-alias-preserves-explicit-intent",
+      "body": {"model":"general","messages":[{"role":"user","content":"hello"}],"max_tokens":0},
+      "expected": {"failure":{"code":"client.invalid_request","param":"max_output_tokens"}}
+    },
+    {
+      "name": "completion-output-limit-normalizes",
+      "body": {"model":"general","messages":[{"role":"user","content":"hello"}],"max_completion_tokens":256},
+      "expected": {"target":"general","content":["hello"],"max_output_tokens":256,"stream":false}
+    },
+    {
+      "name": "output-limit-alias-conflict-rejects",
+      "body": {"model":"general","messages":[{"role":"user","content":"hello"}],"max_tokens":128,"max_completion_tokens":128},
+      "expected": {"failure":{"code":"client.invalid_request","param":"max_tokens"}}
+    },
+    {
+      "name": "deferred-field-rejects-explicitly",
+      "body": {"model":"general","messages":[{"role":"user","content":"hello"}],"frequency_penalty":0},
+      "expected": {"failure":{"code":"capability.unsupported","param":"frequency_penalty"}}
+    },
+    {
+      "name": "deferred-modality-rejects-explicitly",
+      "body": {"model":"general","messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://example.invalid/canary"}}]}]},
+      "expected": {"failure":{"code":"capability.unsupported","param":"messages[0].content[0].type"}}
+    },
+    {
+      "name": "unknown-field-rejects",
+      "body": {"model":"general","messages":[{"role":"user","content":"hello"}],"provider_passthrough":true},
+      "expected": {"failure":{"code":"client.invalid_request","param":"provider_passthrough"}}
+    }
+  ]
+}
