@@ -22,6 +22,7 @@ type Limits struct {
 	MaxOutputTokens         int
 	MaxEventTextBytes       int
 	MaxResponseTextBytes    int
+	MaxSafeErrorBytes       int
 }
 
 // DefaultLimits returns conservative in-process protocol bounds. Route-specific
@@ -47,6 +48,7 @@ func DefaultLimits() Limits {
 		MaxOutputTokens:         1_000_000,
 		MaxEventTextBytes:       1 << 20,
 		MaxResponseTextBytes:    4 << 20,
+		MaxSafeErrorBytes:       1024,
 	}
 }
 
@@ -74,6 +76,7 @@ func (l Limits) validate() *CanonicalError {
 		{"limits.max_output_tokens", l.MaxOutputTokens},
 		{"limits.max_event_text_bytes", l.MaxEventTextBytes},
 		{"limits.max_response_text_bytes", l.MaxResponseTextBytes},
+		{"limits.max_safe_error_bytes", l.MaxSafeErrorBytes},
 	}
 	for _, item := range values {
 		if item.value <= 0 {

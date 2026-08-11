@@ -129,3 +129,20 @@ func invalidRequest(path, rule string) *CanonicalError {
 		Validation:       &ValidationIssue{Path: path, Rule: rule},
 	}
 }
+
+func protocolFailure(code FailureCode, safeMessage, path, rule string, outputVisible, toolActionable bool) *CanonicalError {
+	retry := RetryPreOutputAlternate
+	if outputVisible || toolActionable {
+		retry = RetryClientDecides
+	}
+	return &CanonicalError{
+		Code:             code,
+		Domain:           DomainProtocol,
+		RetryDisposition: retry,
+		SafeMessage:      safeMessage,
+		HTTPStatus:       502,
+		OutputVisible:    outputVisible,
+		ToolActionable:   toolActionable,
+		Validation:       &ValidationIssue{Path: path, Rule: rule},
+	}
+}

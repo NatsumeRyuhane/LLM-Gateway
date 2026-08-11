@@ -98,7 +98,7 @@ func validateSchemaNode(schema map[string]any, path string, depth, maxDepth int)
 	}
 	for keyword := range schema {
 		if _, ok := supportedSchemaKeywords[keyword]; !ok {
-			return &schemaViolation{path: path, rule: "contains unsupported keyword " + keyword}
+			return &schemaViolation{path: path, rule: "contains an unsupported keyword"}
 		}
 	}
 	if value, ok := schema["type"]; ok {
@@ -503,6 +503,33 @@ func jsonValuesEqual(left, right any) bool {
 		leftRat, leftOK := numberRat(leftNumber)
 		rightRat, rightOK := numberRat(rightNumber)
 		return leftOK && rightOK && leftRat.Cmp(rightRat) == 0
+	}
+	leftObject, leftIsObject := left.(map[string]any)
+	rightObject, rightIsObject := right.(map[string]any)
+	if leftIsObject || rightIsObject {
+		if !leftIsObject || !rightIsObject || len(leftObject) != len(rightObject) {
+			return false
+		}
+		for key, leftValue := range leftObject {
+			rightValue, exists := rightObject[key]
+			if !exists || !jsonValuesEqual(leftValue, rightValue) {
+				return false
+			}
+		}
+		return true
+	}
+	leftArray, leftIsArray := left.([]any)
+	rightArray, rightIsArray := right.([]any)
+	if leftIsArray || rightIsArray {
+		if !leftIsArray || !rightIsArray || len(leftArray) != len(rightArray) {
+			return false
+		}
+		for index := range leftArray {
+			if !jsonValuesEqual(leftArray[index], rightArray[index]) {
+				return false
+			}
+		}
+		return true
 	}
 	return reflect.DeepEqual(left, right)
 }
