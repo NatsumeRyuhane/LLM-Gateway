@@ -20,6 +20,12 @@ Unsupported and deferred input returns a stable invalid-request or
 invalid. No field is silently ignored, approximated through prompting, or passed
 through to a provider.
 
+The public boundary is implemented by `backend/internal/openai`. Its deterministic
+HTTP fixtures cover `Accept` selection, request normalization/rejection,
+buffered response shape, SSE ordering, usage, and `[DONE]`. The package imports
+the canonical protocol domain but no provider adapter, routing implementation,
+storage package, authentication implementation, or credential type.
+
 ## Endpoints
 
 | Public endpoint | Status | V0 behavior |
@@ -106,6 +112,11 @@ The cases are versioned in
 | `user`, `safety_identifier` | Deferred | Provider user identifiers require a separate privacy contract |
 | `web_search_options` or hosted tools | Unsupported | Gateway does not expose provider-hosted tool execution in v0 |
 | Deprecated `functions`, `function_call` | Deferred | Use `tools` and `tool_choice`; no implicit rewrite in v0 |
+
+When `tool_choice` is absent it defaults to `auto` if a non-empty `tools` array
+is present and to `none` otherwise. An explicit zero sampling value remains
+explicit. Supplying both output-token aliases is invalid even if their numeric
+values are equal.
 
 ## Message and content fields
 

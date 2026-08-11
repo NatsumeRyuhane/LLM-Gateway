@@ -93,6 +93,7 @@ infrastructure packages -> domain interfaces and models
 | Package | Owns | Must not own |
 | --- | --- | --- |
 | `protocol` | Canonical requests, responses, events, capabilities, and errors | Provider-specific HTTP clients |
+| `openai` | Public v0 HTTP/JSON/SSE decoding, encoding, and compatibility errors | Authentication, routing, provider translation, or credential material |
 | `provider` | Adapter contract and provider implementations | Routing policy |
 | `routing` | Candidate filtering, affinity, deterministic selection, retry budget | Raw provider wire formats |
 | `health` | Evidence, freshness, confidence, state transitions | Traffic selection side effects |
