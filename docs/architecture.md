@@ -93,6 +93,7 @@ infrastructure packages -> domain interfaces and models
 | Package | Owns | Must not own |
 | --- | --- | --- |
 | `protocol` | Canonical requests, responses, events, capabilities, and errors | Provider-specific HTTP clients |
+| `openai` | Public v0 HTTP/JSON/SSE decoding, encoding, and compatibility errors | Authentication, routing, provider translation, or credential material |
 | `provider` | Adapter contract and provider implementations | Routing policy |
 | `routing` | Candidate filtering, affinity, deterministic selection, retry budget | Raw provider wire formats |
 | `health` | Evidence, freshness, confidence, state transitions | Traffic selection side effects |
@@ -107,9 +108,9 @@ Interfaces are defined by the consuming package and kept narrow. Shared utility
 packages are avoided unless at least two stable consumers need the same concept.
 
 The initial scaffold materializes every boundary above in the single
-`backend/` module. `app`, `config`, `health`, and `protocol` contain runtime
-behavior; the remaining packages start as documented boundaries until their
-vertical-slice behavior lands. `cmd/gateway` and `cmd/mock-provider` both use
+`backend/` module. `app`, `config`, `health`, `openai`, and `protocol` contain
+runtime behavior; the remaining packages start as documented boundaries until
+their vertical-slice behavior lands. `cmd/gateway` and `cmd/mock-provider` both use
 the shared lifecycle, but production packages do not import the mock-provider
 command. Issue #7 still owns deterministic response profiles, fault injection,
 and the guarded test-only control surface.

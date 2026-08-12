@@ -63,6 +63,9 @@ the rejected variable without repeating its value.
 - `internal/protocol` owns provider-neutral Chat Completions requests, responses,
   capabilities, failures, bounded JSON Schema validation, and stream lifecycle
   enforcement.
+- `internal/openai` owns the strict public v0 HTTP/JSON/SSE codec, deterministic
+  conformance goldens, and safe public error translation. It depends only on the
+  canonical protocol package among internal domains.
 - `internal/auth`, `provider`, `routing`, `accounting`, `telemetry`, `storage`,
   and `controlapi` reserve the remaining accepted domain boundaries for the
   vertical slice.
