@@ -145,6 +145,9 @@ func TestEncodeErrorUsesConfiguredIdentifierLimitAndRejectsC1Controls(t *testing
 	if body.Error.Param != nil {
 		t.Fatalf("param = %q, want null", *body.Error.Param)
 	}
+	if body.RequestID != "" {
+		t.Fatalf("request_id = %q, want empty", body.RequestID)
+	}
 }
 
 func TestEncodeModelsResponse(t *testing.T) {
