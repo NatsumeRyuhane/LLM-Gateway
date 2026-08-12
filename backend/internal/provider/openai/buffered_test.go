@@ -115,7 +115,9 @@ func TestBufferedClassifiesStatusBoundsAndProtocolFailures(t *testing.T) {
 		code   protocol.FailureCode
 	}{
 		{"rate limited", http.StatusTooManyRequests, "application/json", `{"error":{"message":"provider secret"}}`, 4096, protocol.FailureUpstreamRateLimited},
-		{"redirect", http.StatusTemporaryRedirect, "text/plain", "redirect", 4096, protocol.FailureUpstreamInvalidStatus},
+		{"redirect", http.StatusTemporaryRedirect, "text/plain", "redirect", 4096, protocol.FailureUpstreamRedirectRejected},
+		{"context limit", http.StatusBadRequest, "application/json", `{"error":{"message":"secret prompt","type":"invalid_request_error","code":"context_length_exceeded"}}`, 4096, protocol.FailureUpstreamContextLimit},
+		{"content policy", http.StatusBadRequest, "application/json", `{"error":{"message":"secret prompt","type":"content_policy_violation"}}`, 4096, protocol.FailureUpstreamContentPolicy},
 		{"wrong content type", http.StatusOK, "text/html", "<html>secret</html>", 4096, protocol.FailureProtocolInvalidJSON},
 		{"oversized", http.StatusOK, "application/json", strings.Repeat("x", 512), 128, protocol.FailureUpstreamResponseTooLarge},
 		{"malformed", http.StatusOK, "application/json", `{"id":`, 4096, protocol.FailureProtocolInvalidJSON},
@@ -140,7 +142,7 @@ func TestBufferedClassifiesStatusBoundsAndProtocolFailures(t *testing.T) {
 			if failure == nil || failure.Code != test.code {
 				t.Fatalf("Buffered() failure = %#v, want %s", failure, test.code)
 			}
-			if strings.Contains(failure.Error(), "secret") || strings.Contains(failure.Error(), test.body) {
+			if strings.Contains(failure.Error(), "secret") || (len(test.body) > 32 && strings.Contains(failure.Error(), test.body)) {
 				t.Fatalf("failure leaked provider body: %v", failure)
 			}
 		})

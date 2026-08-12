@@ -43,7 +43,7 @@ func (a *Adapter) Buffered(ctx context.Context, attempt provider.Attempt, reques
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return protocol.ValidatedChatResponse{}, attachAttempt(classifyStatus(response.StatusCode), request, attempt, route)
+		return protocol.ValidatedChatResponse{}, attachAttempt(classifyResponseStatus(response, route.Limits().MaxErrorBodyBytes), request, attempt, route)
 	}
 	if !jsonContentType(response.Header.Get("Content-Type")) {
 		return protocol.ValidatedChatResponse{}, attachAttempt(protocolFailure(protocol.FailureProtocolInvalidJSON, "The upstream response is invalid JSON.", "response.content_type", "must be application/json"), request, attempt, route)
@@ -118,11 +118,14 @@ func jsonContentType(value string) bool {
 	return strings.EqualFold(strings.TrimSpace(mediaType), "application/json")
 }
 
-func classifyStatus(status int) *protocol.CanonicalError {
+func classifyResponseStatus(response *http.Response, limit int64) *protocol.CanonicalError {
+	status := response.StatusCode
 	var code protocol.FailureCode
 	var retry protocol.RetryDisposition
 	var message string
 	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther, http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		code, retry, message = protocol.FailureUpstreamRedirectRejected, protocol.RetryPreOutputAlternate, "The upstream provider attempted a disallowed redirect."
 	case http.StatusUnauthorized:
 		code, retry, message = protocol.FailureUpstreamAuthenticationFailed, protocol.RetryPreOutputAlternate, "The upstream provider rejected its credential."
 	case http.StatusForbidden:
@@ -132,7 +135,12 @@ func classifyStatus(status int) *protocol.CanonicalError {
 	case http.StatusRequestEntityTooLarge:
 		code, retry, message = protocol.FailureUpstreamContextLimit, protocol.RetryPreOutputAlternate, "The upstream provider rejected the request size."
 	default:
-		if status >= 500 && status <= 599 {
+		providerCode := readProviderErrorCode(response.Body, limit)
+		if providerCode == "context_length_exceeded" {
+			code, retry, message = protocol.FailureUpstreamContextLimit, protocol.RetryPreOutputAlternate, "The upstream provider rejected the request context."
+		} else if providerCode == "content_policy_violation" || providerCode == "content_filter" {
+			code, retry, message = protocol.FailureUpstreamContentPolicy, protocol.RetryPreOutputAlternate, "The upstream provider rejected the request under its content policy."
+		} else if status >= 500 && status <= 599 {
 			code, retry, message = protocol.FailureUpstreamServerError, protocol.RetryPreOutputSameOrAlternate, "The upstream provider failed."
 		} else {
 			code, retry, message = protocol.FailureUpstreamInvalidStatus, protocol.RetryPreOutputAlternate, "The upstream provider returned an invalid status."
@@ -141,6 +149,24 @@ func classifyStatus(status int) *protocol.CanonicalError {
 	failure := failure(code, protocol.DomainUpstream, retry, http.StatusBadGateway, message)
 	failure.ProviderStatus = status
 	return failure
+}
+
+func readProviderErrorCode(reader io.Reader, limit int64) string {
+	if reader == nil || limit <= 0 {
+		return ""
+	}
+	encoded, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil || int64(len(encoded)) > limit {
+		return ""
+	}
+	var envelope errorResponse
+	if json.Unmarshal(encoded, &envelope) != nil {
+		return ""
+	}
+	if envelope.Error.Code != "" {
+		return envelope.Error.Code
+	}
+	return envelope.Error.Type
 }
 
 func protocolFailure(code protocol.FailureCode, message, path, rule string) *protocol.CanonicalError {

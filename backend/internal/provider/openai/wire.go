@@ -120,3 +120,12 @@ type promptTokensDetails struct {
 type completionTokensDetails struct {
 	ReasoningTokens *int64 `json:"reasoning_tokens,omitempty"`
 }
+
+type errorResponse struct {
+	Error providerError `json:"error"`
+}
+
+type providerError struct {
+	Type string `json:"type,omitempty"`
+	Code string `json:"code,omitempty"`
+}

@@ -46,7 +46,7 @@ func (a *Adapter) Stream(ctx context.Context, attempt provider.Attempt, request 
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return protocol.StreamResult{}, attachAttempt(classifyStatus(response.StatusCode), request, attempt, route)
+		return protocol.StreamResult{}, attachAttempt(classifyResponseStatus(response, route.Limits().MaxErrorBodyBytes), request, attempt, route)
 	}
 	if !sseContentType(response.Header.Get("Content-Type")) {
 		return protocol.StreamResult{}, attachAttempt(protocolFailure(protocol.FailureProtocolInvalidSSE, "The upstream stream is invalid.", "response.content_type", "must be text/event-stream"), request, attempt, route)

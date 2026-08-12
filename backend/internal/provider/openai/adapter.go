@@ -18,6 +18,8 @@ type Adapter struct {
 	now    func() time.Time
 }
 
+var _ provider.Adapter = (*Adapter)(nil)
+
 // New creates an adapter with a dedicated client that ignores ambient proxy
 // settings, disables compression, has no cookie jar, and rejects redirects.
 func New() *Adapter {
