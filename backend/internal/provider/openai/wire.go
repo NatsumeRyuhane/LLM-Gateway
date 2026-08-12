@@ -27,6 +27,20 @@ type message struct {
 	Refusal    *string    `json:"refusal,omitempty"`
 }
 
+type deltaMessage struct {
+	Role      string          `json:"role,omitempty"`
+	Content   *string         `json:"content,omitempty"`
+	Refusal   *string         `json:"refusal,omitempty"`
+	ToolCalls []deltaToolCall `json:"tool_calls,omitempty"`
+}
+
+type deltaToolCall struct {
+	Index    int          `json:"index"`
+	ID       string       `json:"id,omitempty"`
+	Type     string       `json:"type,omitempty"`
+	Function functionCall `json:"function"`
+}
+
 type tool struct {
 	Type     string   `json:"type"`
 	Function function `json:"function"`
@@ -75,11 +89,20 @@ type chatResponse struct {
 	Usage   *usage   `json:"usage,omitempty"`
 }
 
+type chatChunk struct {
+	ID      string   `json:"id"`
+	Object  string   `json:"object"`
+	Created int64    `json:"created"`
+	Model   string   `json:"model"`
+	Choices []choice `json:"choices"`
+	Usage   *usage   `json:"usage,omitempty"`
+}
+
 type choice struct {
-	Index        int     `json:"index"`
-	Message      message `json:"message"`
-	Delta        message `json:"delta"`
-	FinishReason *string `json:"finish_reason"`
+	Index        int          `json:"index"`
+	Message      message      `json:"message"`
+	Delta        deltaMessage `json:"delta"`
+	FinishReason *string      `json:"finish_reason"`
 }
 
 type usage struct {

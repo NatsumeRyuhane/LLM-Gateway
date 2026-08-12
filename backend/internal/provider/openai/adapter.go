@@ -18,15 +18,10 @@ type Adapter struct {
 	now    func() time.Time
 }
 
-// New creates an adapter using a dedicated client. nil uses a transport that
-// ignores ambient proxy settings, disables compression, and rejects redirects.
-func New(client *http.Client) *Adapter {
-	if client == nil {
-		client = &http.Client{Transport: defaultTransport()}
-	} else {
-		copy := *client
-		client = &copy
-	}
+// New creates an adapter with a dedicated client that ignores ambient proxy
+// settings, disables compression, has no cookie jar, and rejects redirects.
+func New() *Adapter {
+	client := &http.Client{Transport: defaultTransport()}
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}

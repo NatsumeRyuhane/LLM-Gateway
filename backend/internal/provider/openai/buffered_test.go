@@ -36,7 +36,7 @@ func TestBufferedTranslatesCanonicalRequestAndValidatesResponse(t *testing.T) {
 
 	request := validatedToolRequest(t, false)
 	route := testRoute(t, server.URL, request)
-	response, failure := New(server.Client()).Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, route)
+	response, failure := New().Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, route)
 	if failure != nil {
 		t.Fatalf("Buffered() failure = %#v", failure)
 	}
@@ -73,7 +73,7 @@ func TestBufferedStructuredOutputPreservesExplicitParameters(t *testing.T) {
 	defer server.Close()
 
 	request := validatedStructuredRequest(t)
-	response, failure := New(server.Client()).Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, testRoute(t, server.URL, request))
+	response, failure := New().Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, testRoute(t, server.URL, request))
 	if failure != nil {
 		t.Fatalf("Buffered() failure = %#v", failure)
 	}
@@ -95,7 +95,7 @@ func TestBufferedRejectsUnsupportedSemanticsBeforeDispatch(t *testing.T) {
 
 	request := validatedToolRequest(t, false)
 	route := testRouteWithCapabilities(t, server.URL, providerCapabilities(protocol.CapabilityEndpointBuffered, protocol.CapabilityRoleUser, protocol.CapabilityContentText))
-	_, failure := New(server.Client()).Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, route)
+	_, failure := New().Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, route)
 	if failure == nil || failure.Code != protocol.FailureCapabilityUnsupported {
 		t.Fatalf("Buffered() failure = %#v", failure)
 	}
@@ -136,7 +136,7 @@ func TestBufferedClassifiesStatusBoundsAndProtocolFailures(t *testing.T) {
 				limits.MaxSSEEventBytes, limits.MaxSSELineBytes = int(test.limit), int(test.limit)
 			}
 			route = testRouteWithLimits(t, server.URL, request, limits)
-			_, failure := New(server.Client()).Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, route)
+			_, failure := New().Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, route)
 			if failure == nil || failure.Code != test.code {
 				t.Fatalf("Buffered() failure = %#v, want %s", failure, test.code)
 			}
@@ -164,7 +164,7 @@ func TestBufferedPropagatesCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan *protocol.CanonicalError, 1)
 	go func() {
-		_, failure := New(server.Client()).Buffered(ctx, provider.Attempt{ID: "attempt-1"}, request, testRoute(t, server.URL, request))
+		_, failure := New().Buffered(ctx, provider.Attempt{ID: "attempt-1"}, request, testRoute(t, server.URL, request))
 		done <- failure
 	}()
 	select {
