@@ -45,7 +45,7 @@ func (c Codec) NewStreamEncoder(
 	if err != nil {
 		return nil, err
 	}
-	header := responseHeaders(MediaTypeEventStream, canonical.RequestID, attemptID, routeID, visibility)
+	header := c.responseHeaders(MediaTypeEventStream, canonical.RequestID, attemptID, routeID, visibility)
 	header.Set("Cache-Control", "no-cache")
 	return &StreamEncoder{validator: validator, request: canonical, metadata: metadata, header: header}, nil
 }

@@ -108,9 +108,9 @@ Interfaces are defined by the consuming package and kept narrow. Shared utility
 packages are avoided unless at least two stable consumers need the same concept.
 
 The initial scaffold materializes every boundary above in the single
-`backend/` module. `app`, `config`, `health`, and `protocol` contain runtime
-behavior; the remaining packages start as documented boundaries until their
-vertical-slice behavior lands. `cmd/gateway` and `cmd/mock-provider` both use
+`backend/` module. `app`, `config`, `health`, `openai`, and `protocol` contain
+runtime behavior; the remaining packages start as documented boundaries until
+their vertical-slice behavior lands. `cmd/gateway` and `cmd/mock-provider` both use
 the shared lifecycle, but production packages do not import the mock-provider
 command. Issue #7 still owns deterministic response profiles, fault injection,
 and the guarded test-only control surface.

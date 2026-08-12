@@ -103,6 +103,9 @@ func decodeRequiredString(object map[string]json.RawMessage, key, path string) (
 	if !ok {
 		return "", &protocolError{path: joinPath(path, key), rule: "is required"}
 	}
+	if isJSONNull(raw) {
+		return "", &protocolError{path: joinPath(path, key), rule: "must be a string"}
+	}
 	var value string
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return "", &protocolError{path: joinPath(path, key), rule: "must be a string"}

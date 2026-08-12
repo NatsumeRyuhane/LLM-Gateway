@@ -38,6 +38,9 @@ func (c Codec) decodeMessages(raw []byte) ([]protocol.CanonicalMessage, *protoco
 			return nil, unsupported(path+".refusal", "assistant refusal history is deferred")
 		}
 		if nameRaw, present := object["name"]; present {
+			if isJSONNull(nameRaw) {
+				return nil, invalidRequest(path+".name", "must be a string")
+			}
 			var name string
 			if err := json.Unmarshal(nameRaw, &name); err != nil {
 				return nil, invalidRequest(path+".name", "must be a string")
@@ -60,6 +63,9 @@ func (c Codec) decodeMessages(raw []byte) ([]protocol.CanonicalMessage, *protoco
 			message.ToolCalls = calls
 		}
 		if callIDRaw, present := object["tool_call_id"]; present {
+			if isJSONNull(callIDRaw) {
+				return nil, invalidRequest(path+".tool_call_id", "must be a string")
+			}
 			var callID string
 			if err := json.Unmarshal(callIDRaw, &callID); err != nil {
 				return nil, invalidRequest(path+".tool_call_id", "must be a string")

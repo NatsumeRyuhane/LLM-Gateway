@@ -69,7 +69,7 @@ func (c Codec) EncodeModelsResponse(requestID string, models []Model) (EncodedRe
 	}
 	return EncodedResponse{
 		Status: http.StatusOK,
-		Header: responseHeaders(MediaTypeJSON, requestID, "", "", CorrelationVisibility{}),
+		Header: c.responseHeaders(MediaTypeJSON, requestID, "", "", CorrelationVisibility{}),
 		Body:   body,
 	}, nil
 }
@@ -158,7 +158,7 @@ func (c Codec) EncodeBufferedChatCompletion(response protocol.ValidatedChatRespo
 	}
 	return EncodedResponse{
 		Status: http.StatusOK,
-		Header: responseHeaders(MediaTypeJSON, canonical.RequestID, canonical.AttemptID, canonical.RouteID, visibility),
+		Header: c.responseHeaders(MediaTypeJSON, canonical.RequestID, canonical.AttemptID, canonical.RouteID, visibility),
 		Body:   body,
 	}, nil
 }
@@ -197,7 +197,7 @@ func (c Codec) EncodeError(failure *protocol.CanonicalError, visibility Correlat
 		message = "The gateway could not complete the request."
 	}
 	var parameter *string
-	if failure.Validation != nil && validErrorParameter(failure.Validation.Path) {
+	if failure.Validation != nil && c.validErrorParameter(failure.Validation.Path) {
 		value := failure.Validation.Path
 		parameter = &value
 	}
@@ -215,7 +215,7 @@ func (c Codec) EncodeError(failure *protocol.CanonicalError, visibility Correlat
 	}
 	return EncodedResponse{
 		Status: status,
-		Header: responseHeaders(MediaTypeJSON, requestID, failure.AttemptID, failure.RouteID, visibility),
+		Header: c.responseHeaders(MediaTypeJSON, requestID, failure.AttemptID, failure.RouteID, visibility),
 		Body:   body,
 	}
 }
@@ -231,16 +231,16 @@ func encodeUsage(usage protocol.CanonicalUsage) *usageEnvelope {
 	return result
 }
 
-func responseHeaders(contentType, requestID, attemptID, routeID string, visibility CorrelationVisibility) http.Header {
+func (c Codec) responseHeaders(contentType, requestID, attemptID, routeID string, visibility CorrelationVisibility) http.Header {
 	header := make(http.Header)
 	header.Set("Content-Type", contentType)
-	if validPublicIdentifier(requestID, 256) {
+	if validPublicIdentifier(requestID, c.limits.MaxIdentifierBytes) {
 		header.Set(HeaderRequestID, requestID)
 	}
-	if visibility.AttemptID && validPublicIdentifier(attemptID, 256) {
+	if visibility.AttemptID && validPublicIdentifier(attemptID, c.limits.MaxIdentifierBytes) {
 		header.Set(HeaderAttemptID, attemptID)
 	}
-	if visibility.RouteID && validPublicIdentifier(routeID, 256) {
+	if visibility.RouteID && validPublicIdentifier(routeID, c.limits.MaxIdentifierBytes) {
 		header.Set(HeaderRouteID, routeID)
 	}
 	return header
@@ -269,8 +269,8 @@ func publicErrorType(domain protocol.FailureDomain) string {
 	}
 }
 
-func validErrorParameter(value string) bool {
-	return value != "" && len(value) <= 256 && utf8.ValidString(value) && !containsUnsafeControl(value)
+func (c Codec) validErrorParameter(value string) bool {
+	return validPublicIdentifier(value, c.limits.MaxIdentifierBytes)
 }
 
 func validPublicIdentifier(value string, maximum int) bool {
@@ -279,7 +279,7 @@ func validPublicIdentifier(value string, maximum int) bool {
 
 func containsUnsafeControl(value string) bool {
 	for _, character := range value {
-		if character < 0x20 || character == 0x7f {
+		if character < 0x20 || (character >= 0x7f && character <= 0x9f) {
 			return true
 		}
 	}

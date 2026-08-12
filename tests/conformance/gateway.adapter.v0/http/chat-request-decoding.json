@@ -13,7 +13,7 @@
       "expected": {"target":"general","content":["hello"," world"],"stream":false}
     },
     {
-      "name": "legacy-output-limit-alias-preserves-explicit-intent",
+      "name": "legacy-output-limit-alias-reports-canonical-param",
       "body": {"model":"general","messages":[{"role":"user","content":"hello"}],"max_tokens":0},
       "expected": {"failure":{"code":"client.invalid_request","param":"max_output_tokens"}}
     },

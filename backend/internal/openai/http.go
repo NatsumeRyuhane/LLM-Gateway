@@ -49,11 +49,11 @@ func validateEndpoint(request *http.Request, method, path string) *protocol.Cano
 	return nil
 }
 
-func validateJSONContentType(header string) *protocol.CanonicalError {
-	if header == "" {
-		return invalidRequest("headers.content-type", "application/json is required")
+func validateJSONContentType(values []string) *protocol.CanonicalError {
+	if len(values) != 1 {
+		return invalidRequest("headers.content-type", "exactly one application/json value is required")
 	}
-	mediaType, parameters, err := mime.ParseMediaType(header)
+	mediaType, parameters, err := mime.ParseMediaType(values[0])
 	if err != nil || !strings.EqualFold(mediaType, MediaTypeJSON) || len(parameters) != 0 {
 		return invalidRequest("headers.content-type", "must be application/json without parameters")
 	}

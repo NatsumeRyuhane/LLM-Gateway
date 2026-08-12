@@ -2,6 +2,7 @@ package openai
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -175,6 +176,17 @@ func TestDecodeRejectsAmbiguousAndUnknownInput(t *testing.T) {
 		{"refusal history", `{"model":"a","messages":[{"role":"assistant","content":"x","refusal":"no"}]}`, protocol.FailureCapabilityUnsupported, "messages[0].refusal"},
 		{"known deferred field", `{"model":"a","messages":[{"role":"user","content":"x"}],"metadata":{}}`, protocol.FailureCapabilityUnsupported, "metadata"},
 		{"stream options in buffered mode", `{"model":"a","messages":[{"role":"user","content":"x"}],"stream_options":{"include_usage":true}}`, protocol.FailureClientInvalidRequest, "stream_options"},
+		{"null stream", `{"model":"a","messages":[{"role":"user","content":"x"}],"stream":null}`, protocol.FailureClientInvalidRequest, "stream"},
+		{"null temperature", `{"model":"a","messages":[{"role":"user","content":"x"}],"temperature":null}`, protocol.FailureClientInvalidRequest, "temperature"},
+		{"null top p", `{"model":"a","messages":[{"role":"user","content":"x"}],"top_p":null}`, protocol.FailureClientInvalidRequest, "top_p"},
+		{"null seed", `{"model":"a","messages":[{"role":"user","content":"x"}],"seed":null}`, protocol.FailureClientInvalidRequest, "seed"},
+		{"null stop", `{"model":"a","messages":[{"role":"user","content":"x"}],"stop":null}`, protocol.FailureClientInvalidRequest, "stop"},
+		{"null max completion tokens", `{"model":"a","messages":[{"role":"user","content":"x"}],"max_completion_tokens":null}`, protocol.FailureClientInvalidRequest, "max_completion_tokens"},
+		{"null n", `{"model":"a","messages":[{"role":"user","content":"x"}],"n":null}`, protocol.FailureClientInvalidRequest, "n"},
+		{"null parallel tool calls", `{"model":"a","messages":[{"role":"user","content":"x"}],"parallel_tool_calls":null}`, protocol.FailureClientInvalidRequest, "parallel_tool_calls"},
+		{"null participant name", `{"model":"a","messages":[{"role":"user","name":null,"content":"x"}]}`, protocol.FailureClientInvalidRequest, "messages[0].name"},
+		{"null tool call id", `{"model":"a","messages":[{"role":"tool","tool_call_id":null,"content":"x"}]}`, protocol.FailureClientInvalidRequest, "messages[0].tool_call_id"},
+		{"null tool description", `{"model":"a","messages":[{"role":"user","content":"x"}],"tools":[{"type":"function","function":{"name":"lookup","description":null,"parameters":{"type":"object"}}}]}`, protocol.FailureClientInvalidRequest, "tools[0].function.description"},
 	}
 	codec := NewCodec(protocol.DefaultLimits())
 	for _, testCase := range tests {
@@ -210,7 +222,7 @@ func TestDecodeRejectsControlInAttribution(t *testing.T) {
 }
 
 func TestDecodeModelsRequest(t *testing.T) {
-	request := httptest.NewRequest(http.MethodGet, ModelsPath, nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, ModelsPath, nil)
 	request.Header.Set("Accept", "application/json")
 	request.Header.Set(HeaderConversationID, "conversation")
 	decoded, err := NewCodec(protocol.DefaultLimits()).DecodeModelsRequest(request, testMetadata)
@@ -219,6 +231,15 @@ func TestDecodeModelsRequest(t *testing.T) {
 	}
 	if value, present := decoded.Attribution.ConversationID.Get(); !present || value != "conversation" {
 		t.Fatalf("conversation = (%q,%v)", value, present)
+	}
+}
+
+func TestDecodeRejectsRepeatedContentType(t *testing.T) {
+	request := newChatRequest(`{"model":"agent","messages":[{"role":"user","content":"hello"}]}`)
+	request.Header.Add("Content-Type", "text/plain")
+	_, err := NewCodec(protocol.DefaultLimits()).DecodeChatCompletions(request, testMetadata)
+	if err == nil || err.Validation == nil || err.Validation.Path != "headers.content-type" {
+		t.Fatalf("error = %#v", err)
 	}
 }
 
@@ -300,14 +321,14 @@ func FuzzDecodeChatCompletionsNeverPanics(f *testing.F) {
 	f.Add([]byte(`{"model":"a","messages":[{"role":"user","content":[{"type":"image_url"}]}]}`))
 	codec := NewCodec(protocol.DefaultLimits())
 	f.Fuzz(func(t *testing.T, body []byte) {
-		request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, bytes.NewReader(body))
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, bytes.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
 		_, _ = codec.DecodeChatCompletions(request, testMetadata)
 	})
 }
 
 func newChatRequest(body string) *http.Request {
-	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, bytes.NewBufferString(body))
+	request := httptest.NewRequestWithContext(context.Background(), http.MethodPost, ChatCompletionsPath, bytes.NewBufferString(body))
 	request.Header.Set("Content-Type", "application/json")
 	return request
 }

@@ -50,6 +50,9 @@ func (c Codec) decodeTools(raw []byte) ([]protocol.CanonicalFunctionTool, *proto
 		}
 		tool := protocol.CanonicalFunctionTool{Name: name, Parameters: protocol.NewJSONSchema(parameters)}
 		if descriptionRaw, present := function["description"]; present {
+			if isJSONNull(descriptionRaw) {
+				return nil, invalidRequest(functionPath+".description", "must be a string")
+			}
 			var description string
 			if err := json.Unmarshal(descriptionRaw, &description); err != nil {
 				return nil, invalidRequest(functionPath+".description", "must be a string")

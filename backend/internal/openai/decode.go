@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"io"
@@ -73,7 +74,7 @@ func (c Codec) DecodeChatCompletions(request *http.Request, metadata RequestMeta
 	if err := validateEndpoint(request, http.MethodPost, ChatCompletionsPath); err != nil {
 		return protocol.ValidatedChatRequest{}, err
 	}
-	if err := validateJSONContentType(request.Header.Get("Content-Type")); err != nil {
+	if err := validateJSONContentType(request.Header.Values("Content-Type")); err != nil {
 		return protocol.ValidatedChatRequest{}, err
 	}
 	if request.Body == nil {
@@ -163,9 +164,11 @@ func (c Codec) decodeChatBody(body []byte, metadata RequestMetadata) (protocol.C
 		Deadline:        metadata.Deadline,
 	}
 	if raw, present := object["stream"]; present {
-		if err := json.Unmarshal(raw, &canonical.Stream); err != nil {
-			return protocol.CanonicalChatRequest{}, invalidRequest("stream", "must be a boolean")
+		value, err := decodeBool(raw, "stream")
+		if err != nil {
+			return protocol.CanonicalChatRequest{}, err
 		}
+		canonical.Stream = value
 	}
 	if raw, present := object["stream_options"]; present {
 		includeUsage, err := decodeStreamOptions(raw)
@@ -280,6 +283,9 @@ func decodeStreamOptions(raw []byte) (bool, *protocol.CanonicalError) {
 }
 
 func decodeBool(raw []byte, path string) (bool, *protocol.CanonicalError) {
+	if isJSONNull(raw) {
+		return false, invalidRequest(path, "must be a boolean")
+	}
 	var value bool
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return false, invalidRequest(path, "must be a boolean")
@@ -288,6 +294,9 @@ func decodeBool(raw []byte, path string) (bool, *protocol.CanonicalError) {
 }
 
 func decodeFloat(raw []byte, path string) (float64, *protocol.CanonicalError) {
+	if isJSONNull(raw) {
+		return 0, invalidRequest(path, "must be a number")
+	}
 	var value float64
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return 0, invalidRequest(path, "must be a number")
@@ -296,6 +305,9 @@ func decodeFloat(raw []byte, path string) (float64, *protocol.CanonicalError) {
 }
 
 func decodeInt(raw []byte, path string) (int, *protocol.CanonicalError) {
+	if isJSONNull(raw) {
+		return 0, invalidRequest(path, "must be an integer")
+	}
 	var value int
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return 0, invalidRequest(path, "must be an integer")
@@ -304,6 +316,9 @@ func decodeInt(raw []byte, path string) (int, *protocol.CanonicalError) {
 }
 
 func decodeInt64(raw []byte, path string) (int64, *protocol.CanonicalError) {
+	if isJSONNull(raw) {
+		return 0, invalidRequest(path, "must be an integer")
+	}
 	var value int64
 	if err := json.Unmarshal(raw, &value); err != nil {
 		return 0, invalidRequest(path, "must be an integer")
@@ -321,6 +336,9 @@ func decodeOptionalInt(object map[string]json.RawMessage, key string) (int, bool
 }
 
 func decodeStop(raw []byte) ([]string, *protocol.CanonicalError) {
+	if isJSONNull(raw) {
+		return nil, invalidRequest("stop", "must be a string or string array")
+	}
 	var single string
 	if err := json.Unmarshal(raw, &single); err == nil {
 		return []string{single}, nil
@@ -330,4 +348,8 @@ func decodeStop(raw []byte) ([]string, *protocol.CanonicalError) {
 		return nil, invalidRequest("stop", "must be a string or string array")
 	}
 	return multiple, nil
+}
+
+func isJSONNull(raw []byte) bool {
+	return bytes.Equal(bytes.TrimSpace(raw), []byte("null"))
 }
