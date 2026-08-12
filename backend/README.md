@@ -63,9 +63,14 @@ the rejected variable without repeating its value.
 - `internal/protocol` owns provider-neutral Chat Completions requests, responses,
   capabilities, failures, bounded JSON Schema validation, and stream lifecycle
   enforcement.
-- `internal/auth`, `provider`, `routing`, `accounting`, `telemetry`, `storage`,
-  and `controlapi` reserve the remaining accepted domain boundaries for the
-  vertical slice.
+- `internal/provider` owns the consumer-facing adapter contract and immutable
+  validated route inputs. `internal/provider/openai` translates one
+  OpenAI-compatible upstream Chat Completions route, validates buffered and
+  incremental SSE success paths, places route-owned credentials, and closes all
+  upstream response bodies.
+- `internal/auth`, `routing`, `accounting`, `telemetry`, `storage`, and
+  `controlapi` reserve the remaining accepted domain boundaries for the vertical
+  slice.
 
 Unit tests stay beside their packages. Root `tests/` remains reserved for
 cross-service, end-to-end, load, replay, and fault assets.

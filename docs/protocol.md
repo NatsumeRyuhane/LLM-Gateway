@@ -100,6 +100,18 @@ An adapter must not:
 - turn an unsupported semantic into prompt text or silently drop it;
 - log prompt, completion, tool-argument, credential, or raw error-body content.
 
+`backend/internal/provider` now exposes the consumer-facing adapter and immutable
+validated-route contracts. `backend/internal/provider/openai` implements one
+OpenAI-compatible Chat Completions upstream adapter. Its request, response,
+chunk, usage, tool-call, and error wire models remain private. The adapter maps
+only canonical fields, rejects missing route capabilities before dispatch,
+returns only validated canonical responses/events or stable failures, and never
+owns routing, retry, fallback, or downstream serialization.
+
+The implementation deliberately supports direct admitted route endpoints only.
+Automatic redirects remain disabled, including otherwise same-origin redirects,
+until a provider contract and per-hop endpoint admission path require them.
+
 ## Canonical request
 
 ```text
