@@ -52,6 +52,37 @@ validation. Function parameter schemas must allow a JSON object. Complete tool
 arguments and structured output are parsed and validated locally; validation
 never performs filesystem, DNS, or network access.
 
+### Go public OpenAI codec
+
+`backend/internal/openai` implements the downstream `gateway.adapter.v0`
+boundary. `Codec.DecodeModelsRequest` and `Codec.DecodeChatCompletions` require
+the exact accepted method and path, reject query strings, validate the selected
+`Accept` representation, and keep gateway request IDs/deadlines outside the
+untrusted JSON body. Chat bodies require parameter-free `application/json`, are
+read under a derived absolute bound, reject duplicate or unknown object keys,
+and turn known deferred/unsupported semantics into
+`capability.unsupported` before canonical validation.
+
+The decoder owns public defaults and aliases: `stream` defaults to `false`,
+`tool_choice` defaults to `auto` when tools are present and `none` otherwise,
+`response_format` defaults to `text`, string `stop` becomes one canonical stop
+sequence, and exactly one of `max_tokens` or `max_completion_tokens` may set the
+explicit canonical output-token limit. Only string content and ordered
+`{type:"text",text:...}` parts enter the canonical request. Attribution comes
+only from the bounded conversation/run extension headers.
+
+Buffered results must pass `protocol.ValidateChatResponse` before
+`EncodeBufferedChatCompletion`. `NewStreamEncoder` wraps one
+`protocol.StreamValidator` for exactly one attempt and validates every event
+before emitting a complete SSE frame. It emits role with the first model-derived
+frame, usage immediately before completion when requested and available, and
+`[DONE]` only after a validated `response.completed`. Failure, cancellation,
+invalid order, mixed IDs, or early EOF never produces a false sentinel.
+Attempt/route response headers require an authorization decision supplied to the
+codec; request correlation remains public. Error encoding serializes only the
+stable code, safe message, bounded parameter path, and authorized correlation
+metadata.
+
 Default protocol limits are explicit and may be lowered by route or deployment
 configuration without truncating data:
 
@@ -533,6 +564,14 @@ Fixtures store provider wire input/output, expected canonical values/events,
 expected failure code/domain/disposition, visibility state, cleanup assertions,
 and contract version. A capability is not production-eligible until its fixture
 passes under race detection where concurrency is involved.
+
+The downstream codec goldens live beside the adapter fixtures:
+
+- `http/accept-selection.json` fixes representation precedence;
+- `http/chat-request-decoding.json` fixes normalization and explicit rejection;
+- `http/buffered-response.json` fixes one-choice response serialization; and
+- `http/stream-response.json` fixes event/chunk order, usage, and terminal
+  completion.
 
 The initial capability-selection manifests are versioned with this contract:
 
