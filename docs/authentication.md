@@ -75,13 +75,16 @@ applications is therefore two distinct attribution keys. These values remain
 gateway accounting/routing inputs and are absent from the canonical request
 given to a provider.
 
-Provider request construction always creates a fresh `http.Request`. Its API
-does not accept an inbound request or header map. The complete current outbound
-allowlist is `Authorization` populated from the route-owned provider credential,
-plus optional `Content-Type`, `Accept`, and `User-Agent` values supplied by the
-adapter. Application authorization, cookies, identity, forwarding, proxy,
-gateway attribution, and inbound provider-authentication headers cannot enter
-that construction path.
+The OpenAI-compatible provider adapter always creates a fresh `http.Request`
+from a validated canonical request and a validated route. Its API does not
+accept an inbound request or header map. The complete current outbound allowlist
+is `Authorization` populated from the route-owned provider credential plus the
+adapter-owned `Content-Type`, `Accept`, and `User-Agent` values. Application
+authorization, cookies, identity, forwarding, proxy, gateway attribution, and
+inbound provider-authentication headers cannot enter that construction path.
+The standard HTTP transport may add framing metadata such as `Content-Length`;
+it is derived from the newly encoded canonical body, not copied from inbound
+transport.
 
 Durable credential issuance, display-once delivery, rotation, PostgreSQL-backed
 snapshot refresh, provider credential decryption, route registration, OIDC,

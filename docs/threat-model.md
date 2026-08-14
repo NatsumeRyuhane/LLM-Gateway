@@ -249,6 +249,14 @@ Provider credentials are never copied to a different origin. Redirect rejection
 is recorded as `upstream.redirect_rejected` with the target redacted from routine
 client errors and metric labels.
 
+The initial OpenAI-compatible adapter disables every redirect, ambient proxy
+lookup, cookie jar, and transparent decompression. It builds outbound requests
+from canonical data with a fixed `Accept`, `Content-Type`, and `User-Agent`
+allowlist, then adds only the selected route's bearer credential. Test-local
+upstreams assert that inbound authorization, cookies, forwarding fields, and
+gateway attribution headers never appear upstream. Same-origin redirects remain
+a deferred provider-contract exception rather than a default behavior.
+
 ### Request and response bounds
 
 - Enforce connection, TLS-handshake, response-header, first-event, inter-event,
@@ -265,6 +273,15 @@ client errors and metric labels.
 - Provider content is data only. The gateway does not execute returned tools,
   follow returned URLs, render HTML, or trust provider-supplied filenames or
   headers as local instructions.
+
+The initial adapter enforces encoded buffered-body, error-envelope, SSE-line,
+and SSE-event bounds; disables decompression; closes every response body; and
+requires an explicit provider finish reason followed by `[DONE]` before emitting
+canonical completion. Canonical validators separately bound assembled text,
+tool arguments, schemas, and usage invariants. Connection/TLS/header and
+first/inter-event timeout specialization remains owned by later route transport
+policy; the current path still enforces the request's total effective deadline
+and propagates context cancellation immediately.
 
 ## Control-plane authentication bootstrap
 

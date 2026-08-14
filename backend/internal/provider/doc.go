@@ -1,3 +1,4 @@
-// Package provider owns upstream adapter contracts, provider credential use,
-// and fresh allowlisted outbound request construction.
+// Package provider owns consumer-facing upstream adapter contracts, validated
+// route inputs, provider credential placement, and fresh allowlisted outbound
+// request construction.
 package provider
