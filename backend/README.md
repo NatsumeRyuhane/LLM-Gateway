@@ -1,6 +1,6 @@
 # Backend
 
-The backend is one Go 1.26.5 module containing the gateway modular monolith and
+The backend is one Go 1.26.6 module containing the gateway modular monolith and
 the standalone mock-provider process. The scaffold uses only the Go standard
 library at runtime.
 

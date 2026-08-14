@@ -19,7 +19,7 @@ but would not remove the need to learn streaming and resource-lifecycle details.
 ## Decision
 
 Implement the production gateway and deterministic mock provider in Go. Start
-with Go 1.26.5 and standard-library HTTP primitives. Python may be used later for
+with Go 1.26.6 and standard-library HTTP primitives. Python may be used later for
 offline experiments when it creates a real analysis boundary, not as a second
 production service by default.
 
