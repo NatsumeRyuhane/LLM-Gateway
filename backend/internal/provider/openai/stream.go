@@ -44,7 +44,7 @@ func (a *Adapter) Stream(ctx context.Context, attempt provider.Attempt, request 
 	if err != nil {
 		return protocol.StreamResult{}, attachAttempt(classifyTransport(err), request, attempt, route)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return protocol.StreamResult{}, attachAttempt(classifyResponseStatus(response, route.Limits().MaxErrorBodyBytes), request, attempt, route)
 	}
@@ -119,13 +119,10 @@ func (p *streamParser) parse(reader io.Reader) *protocol.CanonicalError {
 		data.WriteString(value)
 	}
 	if err := scanner.Err(); err != nil {
-		if strings.Contains(err.Error(), "token too long") {
+		if errors.Is(err, bufio.ErrTooLong) {
 			return p.tooLarge("stream.line", "exceeds the SSE line bound")
 		}
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return p.withVisibility(classifyTransport(err))
-		}
-		return p.invalidSSE("stream", "could not be read")
+		return p.withVisibility(classifyTransport(err))
 	}
 	if data.Len() > 0 {
 		if parseFailure := p.consumeData(data.String()); parseFailure != nil {

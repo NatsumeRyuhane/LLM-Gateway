@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -89,8 +90,8 @@ func TestBufferedStructuredOutputPreservesExplicitParameters(t *testing.T) {
 }
 
 func TestBufferedRejectsUnsupportedSemanticsBeforeDispatch(t *testing.T) {
-	dispatched := false
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { dispatched = true }))
+	var dispatched atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { dispatched.Store(true) }))
 	defer server.Close()
 
 	request := validatedToolRequest(t, false)
@@ -99,7 +100,7 @@ func TestBufferedRejectsUnsupportedSemanticsBeforeDispatch(t *testing.T) {
 	if failure == nil || failure.Code != protocol.FailureCapabilityUnsupported {
 		t.Fatalf("Buffered() failure = %#v", failure)
 	}
-	if dispatched {
+	if dispatched.Load() {
 		t.Fatal("unsupported request was dispatched")
 	}
 }
@@ -121,7 +122,9 @@ func TestBufferedClassifiesStatusBoundsAndProtocolFailures(t *testing.T) {
 		{"wrong content type", http.StatusOK, "text/html", "<html>secret</html>", 4096, protocol.FailureProtocolInvalidJSON},
 		{"oversized", http.StatusOK, "application/json", strings.Repeat("x", 512), 128, protocol.FailureUpstreamResponseTooLarge},
 		{"malformed", http.StatusOK, "application/json", `{"id":`, 4096, protocol.FailureProtocolInvalidJSON},
-		{"multiple choices", http.StatusOK, "application/json", `{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[]}`, 4096, protocol.FailureProtocolInvalidJSON},
+		{"no choices", http.StatusOK, "application/json", `{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[]}`, 4096, protocol.FailureProtocolInvalidJSON},
+		{"multiple choices", http.StatusOK, "application/json", `{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"a"},"finish_reason":"stop"},{"index":1,"message":{"role":"assistant","content":"b"},"finish_reason":"stop"}]}`, 4096, protocol.FailureProtocolInvalidJSON},
+		{"missing finish reason", http.StatusOK, "application/json", `{"id":"x","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"a"},"finish_reason":null}]}`, 4096, protocol.FailureProtocolInvalidJSON},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

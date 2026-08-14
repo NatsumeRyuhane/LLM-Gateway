@@ -49,10 +49,15 @@ func attachAttempt(failure *protocol.CanonicalError, request protocol.ValidatedC
 	if failure == nil {
 		return nil
 	}
-	failure.RequestID = request.Canonical().RequestID
-	failure.AttemptID = attempt.ID
-	failure.RouteID = route.ID()
-	return failure
+	attached := *failure
+	if failure.Validation != nil {
+		validation := *failure.Validation
+		attached.Validation = &validation
+	}
+	attached.RequestID = request.Canonical().RequestID
+	attached.AttemptID = attempt.ID
+	attached.RouteID = route.ID()
+	return &attached
 }
 
 func classifyTransport(err error) *protocol.CanonicalError {

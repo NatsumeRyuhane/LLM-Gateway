@@ -3,6 +3,7 @@ package openai
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -152,10 +153,40 @@ func TestStreamStopsWhenConsumerRejectsEvent(t *testing.T) {
 		}
 		return nil
 	})
-	if failure != consumerFailure || failure.Code != protocol.FailureClientCancelled {
+	if failure == consumerFailure || failure.Code != protocol.FailureClientCancelled {
 		t.Fatalf("Stream() failure = %#v", failure)
 	}
+	if consumerFailure.RequestID != "" || consumerFailure.AttemptID != "" || consumerFailure.RouteID != "" {
+		t.Fatalf("Stream() mutated consumer-owned failure = %#v", consumerFailure)
+	}
+	if failure.RequestID != "request-1" || failure.AttemptID != "attempt-1" || failure.RouteID != "route-1" {
+		t.Fatalf("Stream() did not attach attempt metadata to its copy = %#v", failure)
+	}
 }
+
+func TestStreamClassifiesScannerReadErrorsAsTransportFailures(t *testing.T) {
+	request := validatedTextRequest(t, true, false)
+	body := &trackedBody{Reader: io.MultiReader(
+		strings.NewReader("data: {\"id\":\"chatcmpl-1\",\"object\":\"chat.completion.chunk\",\"created\":1760000000,\"model\":\"provider-model\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"visible\"},\"finish_reason\":null}]}\n\n"),
+		readerFunc(func([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }),
+	)}
+	adapter := New()
+	adapter.client.Transport = roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": []string{"text/event-stream"}}, Body: body}, nil
+	})
+
+	_, failure := adapter.Stream(context.Background(), provider.Attempt{ID: "attempt-1"}, request, testRoute(t, "https://provider.example/v1/chat/completions", request), func(protocol.CanonicalEvent) *protocol.CanonicalError { return nil })
+	if failure == nil || failure.Code != protocol.FailureUpstreamConnectFailed || !failure.OutputVisible || failure.RetryDisposition != protocol.RetryClientDecides {
+		t.Fatalf("Stream() failure = %#v", failure)
+	}
+	if !body.closed {
+		t.Fatal("Stream() did not close the body after a scanner read failure")
+	}
+}
+
+type readerFunc func([]byte) (int, error)
+
+func (function readerFunc) Read(buffer []byte) (int, error) { return function(buffer) }
 
 func TestStreamPropagatesCancellationAfterHeaders(t *testing.T) {
 	dispatched := make(chan struct{})

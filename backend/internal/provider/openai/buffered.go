@@ -41,7 +41,7 @@ func (a *Adapter) Buffered(ctx context.Context, attempt provider.Attempt, reques
 	if err != nil {
 		return protocol.ValidatedChatResponse{}, attachAttempt(classifyTransport(err), request, attempt, route)
 	}
-	defer response.Body.Close()
+	defer func() { _ = response.Body.Close() }()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return protocol.ValidatedChatResponse{}, attachAttempt(classifyResponseStatus(response, route.Limits().MaxErrorBodyBytes), request, attempt, route)
 	}
