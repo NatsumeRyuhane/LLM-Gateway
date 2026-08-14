@@ -1,6 +1,6 @@
 # Backend
 
-The backend is one Go 1.26.5 module containing the gateway modular monolith and
+The backend is one Go 1.26.6 module containing the gateway modular monolith and
 the standalone mock-provider process. The scaffold uses only the Go standard
 library at runtime.
 
@@ -66,9 +66,16 @@ the rejected variable without repeating its value.
 - `internal/openai` owns the strict public v0 HTTP/JSON/SSE codec, deterministic
   conformance goldens, and safe public error translation. It depends only on the
   canonical protocol package among internal domains.
-- `internal/auth`, `provider`, `routing`, `accounting`, `telemetry`, `storage`,
-  and `controlapi` reserve the remaining accepted domain boundaries for the
-  vertical slice.
+- `internal/auth` owns strict application-credential parsing, keyed verification,
+  typed principals, exact data-plane scopes, and application-bound request
+  attribution. The concrete security contract is in
+  [`docs/authentication.md`](../docs/authentication.md).
+- `internal/app` composes authentication with the public codec so handlers receive
+  typed authenticated requests and never raw identity transport.
+- `internal/provider` owns provider credentials and fresh outbound request
+  construction with an explicit header allowlist. `routing`, `accounting`,
+  `telemetry`, `storage`, and `controlapi` reserve the remaining accepted domain
+  boundaries for the vertical slice.
 
 Unit tests stay beside their packages. Root `tests/` remains reserved for
 cross-service, end-to-end, load, replay, and fault assets.
