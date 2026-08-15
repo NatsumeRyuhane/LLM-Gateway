@@ -17,9 +17,7 @@ import (
 func TestStreamEmitsOrderedTextRefusalUsageAndCompletion(t *testing.T) {
 	var received chatRequest
 	server := streamServer(t, func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Accept") != "text/event-stream" || request.Header.Get("Authorization") != "Bearer provider-secret" {
-			t.Errorf("headers = %v", request.Header)
-		}
+		assertOutboundHeaderAllowlist(t, request, "text/event-stream")
 		if err := json.NewDecoder(request.Body).Decode(&received); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
@@ -32,7 +30,7 @@ func TestStreamEmitsOrderedTextRefusalUsageAndCompletion(t *testing.T) {
 	})
 	defer server.Close()
 
-	request := validatedTextRequest(t, true, true)
+	request := withAttribution(t, validatedTextRequest(t, true, true))
 	var events []protocol.CanonicalEvent
 	result, failure := New().Stream(context.Background(), provider.Attempt{ID: "attempt-1"}, request, testRoute(t, server.URL, request), func(event protocol.CanonicalEvent) *protocol.CanonicalError {
 		events = append(events, event)

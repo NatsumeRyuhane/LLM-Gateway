@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +40,18 @@ func TestValidateRouteSnapshotsConfigurationAndPlacesOnlyCredential(t *testing.T
 	request := validatedTextRequest(t, false)
 	if failure := route.CheckRequest(request); failure != nil {
 		t.Fatalf("CheckRequest() failure = %#v", failure)
+	}
+}
+
+func TestProviderCredentialFormattingIsRedacted(t *testing.T) {
+	credential, err := NewBearerCredential("canary-provider-secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, formatted := range []string{fmt.Sprint(credential), fmt.Sprintf("%#v", credential)} {
+		if strings.Contains(formatted, "canary-provider-secret") || !strings.Contains(formatted, "REDACTED") {
+			t.Fatalf("formatted credential = %q", formatted)
+		}
 	}
 }
 

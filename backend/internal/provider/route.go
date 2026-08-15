@@ -49,6 +49,12 @@ type Credential struct {
 	bearer string
 }
 
+// String implements fmt.Stringer without revealing provider material.
+func (Credential) String() string { return "[REDACTED]" }
+
+// GoString implements fmt.GoStringer without revealing provider material.
+func (Credential) GoString() string { return "provider.Credential{[REDACTED]}" }
+
 // NewBearerCredential validates an OpenAI-compatible bearer credential.
 func NewBearerCredential(secret string) (Credential, error) {
 	if secret == "" || !utf8.ValidString(secret) || containsControl(secret) {

@@ -25,6 +25,7 @@ backlog.
 | [#17](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/17) | Canonical Chat Completions protocol core | Implemented with immutable validated requests, derived capabilities, bounded schema/tool/usage validation, and buffered/stream terminal state machines |
 | [#18](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/18) | Strict OpenAI-compatible downstream codec | Implemented with bounded HTTP/JSON decoding, explicit defaults/aliases/rejections, validated buffered/error encoding, attempt-isolated SSE serialization, conformance goldens, and fuzz coverage |
 | [#19](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/19) | OpenAI-compatible upstream adapter success path | Implemented with validated route inputs, private wire models, lossless request translation, bounded buffered/SSE parsing, canonical response/event validation, route-owned credentials, and cancellation coverage |
+| [#20](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/20) | Application authentication and request attribution | Implemented with typed application principals, keyed non-reversible credential verification, exact surface scopes, application-bound conversation/run attribution, generic safe failures, and allowlisted provider request construction |
 
 ## Later milestones
 

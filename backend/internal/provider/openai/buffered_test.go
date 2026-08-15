@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -17,12 +18,7 @@ import (
 func TestBufferedTranslatesCanonicalRequestAndValidatesResponse(t *testing.T) {
 	var received chatRequest
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Header.Get("Authorization") != "Bearer provider-secret" {
-			t.Errorf("Authorization = %q", request.Header.Get("Authorization"))
-		}
-		if request.Header.Get("Cookie") != "" || request.Header.Get("X-Forwarded-For") != "" || request.Header.Get("X-Gateway-Conversation-ID") != "" {
-			t.Errorf("forbidden headers were forwarded: %v", request.Header)
-		}
+		assertOutboundHeaderAllowlist(t, request, "application/json")
 		if err := json.NewDecoder(request.Body).Decode(&received); err != nil {
 			t.Errorf("decode request: %v", err)
 		}
@@ -35,7 +31,7 @@ func TestBufferedTranslatesCanonicalRequestAndValidatesResponse(t *testing.T) {
 	}))
 	defer server.Close()
 
-	request := validatedToolRequest(t, false)
+	request := withAttribution(t, validatedToolRequest(t, false))
 	route := testRoute(t, server.URL, request)
 	response, failure := New().Buffered(context.Background(), provider.Attempt{ID: "attempt-1"}, request, route)
 	if failure != nil {
@@ -62,6 +58,38 @@ func TestBufferedTranslatesCanonicalRequestAndValidatesResponse(t *testing.T) {
 	if !ok || choice["type"] != "function" {
 		t.Fatalf("tool choice = %#v", received.ToolChoice)
 	}
+}
+
+func assertOutboundHeaderAllowlist(t *testing.T, request *http.Request, accept string) {
+	t.Helper()
+	if request.ContentLength <= 0 || request.Header.Get("Content-Length") == "" {
+		t.Errorf("outbound content length = %d, header %q", request.ContentLength, request.Header.Get("Content-Length"))
+	}
+	header := request.Header.Clone()
+	header.Del("Content-Length")
+	want := http.Header{
+		"Accept":        []string{accept},
+		"Authorization": []string{"Bearer provider-secret"},
+		"Content-Type":  []string{"application/json"},
+		"User-Agent":    []string{userAgent},
+	}
+	if !reflect.DeepEqual(header, want) {
+		t.Errorf("outbound headers = %#v, want exact application allowlist %#v", header, want)
+	}
+}
+
+func withAttribution(t *testing.T, request protocol.ValidatedChatRequest) protocol.ValidatedChatRequest {
+	t.Helper()
+	canonical := request.Canonical()
+	canonical.Attribution = protocol.Attribution{
+		ConversationID: protocol.Some("conversation-1"),
+		RunID:          protocol.Some("run-1"),
+	}
+	validated, failure := protocol.ValidateChatRequest(canonical, request.Limits())
+	if failure != nil {
+		t.Fatalf("ValidateChatRequest(attribution) = %#v", failure)
+	}
+	return validated
 }
 
 func TestBufferedStructuredOutputPreservesExplicitParameters(t *testing.T) {

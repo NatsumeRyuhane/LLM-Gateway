@@ -66,14 +66,19 @@ the rejected variable without repeating its value.
 - `internal/openai` owns the strict public v0 HTTP/JSON/SSE codec, deterministic
   conformance goldens, and safe public error translation. It depends only on the
   canonical protocol package among internal domains.
+- `internal/auth` owns strict application-credential parsing, keyed verification,
+  typed principals, exact data-plane scopes, and application-bound request
+  attribution. The concrete security contract is in
+  [`docs/authentication.md`](../docs/authentication.md).
+- `internal/app` composes authentication with the public codec so handlers receive
+  typed authenticated requests and never raw identity transport.
 - `internal/provider` owns the consumer-facing adapter contract and immutable
   validated route inputs. `internal/provider/openai` translates one
   OpenAI-compatible upstream Chat Completions route, validates buffered and
-  incremental SSE success paths, places route-owned credentials, and closes all
-  upstream response bodies.
-- `internal/auth`, `routing`, `accounting`, `telemetry`, `storage`, and
-  `controlapi` reserve the remaining accepted domain boundaries for the vertical
-  slice.
+  incremental SSE success paths, creates fresh allowlisted outbound requests,
+  places route-owned credentials, and closes all upstream response bodies.
+- `routing`, `accounting`, `telemetry`, `storage`, and `controlapi` reserve the
+  remaining accepted domain boundaries for the vertical slice.
 
 Unit tests stay beside their packages. Root `tests/` remains reserved for
 cross-service, end-to-end, load, replay, and fault assets.

@@ -2,6 +2,13 @@
 
 Status: Accepted for M0 under [issue #5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5)
 
+The application-key portion is implemented for the first M1 data-plane slice.
+Its concrete credential grammar, verifier/repository contract, typed request
+flow, and outbound-header isolation are recorded in
+[Application authentication boundary](authentication.md). Durable issuance,
+snapshot refresh, rotation, and application subject assertions remain deferred
+as described there.
+
 ## Purpose and deployment boundary
 
 This document defines the v0 trust model before authentication, identity linking,
