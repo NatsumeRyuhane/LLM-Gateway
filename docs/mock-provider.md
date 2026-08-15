@@ -61,6 +61,8 @@ standalone process selects one embedded profile at startup with:
 
 - `MOCK_PROVIDER_PROFILE`, defaulting to `success.buffered`; and
 - `MOCK_PROVIDER_SEED`, defaulting to `1`.
+- `MOCK_PROVIDER_STEP_DELAY`, defaulting to `250ms` for each gated stream
+  chunk and bounded from `0s` through `30s`.
 
 The v0 provider has no mutable HTTP control endpoint. Changing a standalone
 scenario requires restarting the disposable process. Consequently there is no
@@ -116,4 +118,3 @@ failure or health transition merely because the fixture knows its label.
 6. For silent behavior, assert successful transport plus ground truth only.
 7. Run JSON validation, formatting, unit, race, static analysis, build,
    vulnerability, and repository policy checks.
-
