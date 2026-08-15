@@ -53,6 +53,13 @@ boundary enforces the accepted 5 ms lookup and 256 concurrent-verification
 maxima and maps stale/unavailable snapshots or lookup overload to bounded safe
 canonical failures.
 
+Concurrency admission or lookup-deadline overload happens before any upstream
+attempt and permits a same-route or alternate-route retry. A stale, unavailable,
+or failed verifier snapshot cannot be repaired by another attempt within the
+same request, so this operation returns `storage.unavailable` with `never`; the
+separate snapshot refresh path governs recovery, after which a caller may begin
+a new request.
+
 Missing, duplicated, malformed, unknown, expired, revoked, cross-class, and
 mismatched credentials all return the same public response fields:
 

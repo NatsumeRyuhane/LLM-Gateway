@@ -24,7 +24,10 @@ type Options struct {
 	Clock                     Clock
 	LookupTimeout             time.Duration
 	MaxConcurrentVerification int
+	lookupContext             lookupContextFactory
 }
+
+type lookupContextFactory func(context.Context, time.Duration) (context.Context, context.CancelFunc)
 
 // DefaultOptions returns the accepted v0 authentication limits.
 func DefaultOptions() Options {
@@ -32,6 +35,7 @@ func DefaultOptions() Options {
 		Clock:                     time.Now,
 		LookupTimeout:             maxLookupTimeout,
 		MaxConcurrentVerification: maxConcurrentVerification,
+		lookupContext:             context.WithTimeout,
 	}
 }
 
@@ -42,6 +46,7 @@ type Authenticator struct {
 	verifier   CredentialVerifier
 	clock      Clock
 	lookup     time.Duration
+	lookupCtx  lookupContextFactory
 	inFlight   chan struct{}
 }
 
@@ -65,11 +70,15 @@ func NewAuthenticator(repository Repository, verifier CredentialVerifier, option
 	if options.MaxConcurrentVerification <= 0 || options.MaxConcurrentVerification > maxConcurrentVerification {
 		return nil, fmt.Errorf("authentication concurrency must be within [1, %d]", maxConcurrentVerification)
 	}
+	if options.lookupContext == nil {
+		options.lookupContext = context.WithTimeout
+	}
 	return &Authenticator{
 		repository: repository,
 		verifier:   verifier,
 		clock:      options.Clock,
 		lookup:     options.LookupTimeout,
+		lookupCtx:  options.lookupContext,
 		inFlight:   make(chan struct{}, options.MaxConcurrentVerification),
 	}, nil
 }
@@ -91,9 +100,10 @@ func (a *Authenticator) Authenticate(ctx context.Context, authorizationValues []
 	}
 	defer presented.clear()
 
-	digest := a.verifier.digest(presented.raw)
-	lookup := CredentialLookup{value: digest}
-	lookupContext, cancel := context.WithTimeout(ctx, a.lookup)
+	lookupDigest := a.verifier.lookupDigest(presented.raw)
+	verifierDigest := a.verifier.digest(presented.raw)
+	lookup := CredentialLookup{value: lookupDigest}
+	lookupContext, cancel := a.lookupCtx(ctx, a.lookup)
 	record, found, lookupErr := a.repository.LookupApplicationCredential(lookupContext, lookup)
 	lookupContextErr := lookupContext.Err()
 	cancel()
@@ -115,9 +125,9 @@ func (a *Authenticator) Authenticate(ctx context.Context, authorizationValues []
 
 	now := a.clock().UTC()
 	validClass := record.Class == CredentialClassApplication
-	validIDs := validStableID(record.CredentialID) && validStableID(record.ApplicationID)
+	validIDs := validCredentialID(record.CredentialID) && validStableID(record.ApplicationID)
 	validCredentialID := constantTimeEqualString(record.CredentialID, presented.credentialID)
-	validVerifier := a.verifier.matches(record.Verifier, digest)
+	validVerifier := a.verifier.matches(record.Verifier, verifierDigest)
 	scopes, validScopes := normalizeScopes(record.Scopes)
 	validTime := record.ExpiresAt.IsZero() || now.Before(record.ExpiresAt)
 	if !validClass || !validIDs || !validCredentialID || !validVerifier || !validScopes || !validTime || record.Revoked {
@@ -170,7 +180,7 @@ func forbiddenFailure() *protocol.CanonicalError {
 func overloadedFailure() *protocol.CanonicalError {
 	return &protocol.CanonicalError{
 		Code: protocol.FailureGatewayOverloaded, Domain: protocol.DomainGateway,
-		RetryDisposition: protocol.RetryNever, SafeMessage: "Gateway temporarily unavailable.", HTTPStatus: 503,
+		RetryDisposition: protocol.RetryPreOutputSameOrAlternate, SafeMessage: "Gateway temporarily unavailable.", HTTPStatus: 503,
 	}
 }
 

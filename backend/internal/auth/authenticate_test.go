@@ -104,6 +104,22 @@ func TestAuthenticationCredentialFailuresAreIndistinguishable(t *testing.T) {
 				}
 			},
 		},
+		{
+			name: "mismatched verifier", headers: []string{"Bearer " + valid}, credential: valid,
+			mutate: func(repository *testRepository, verifier *HMACVerifier) {
+				_, stored, err := verifier.DeriveStoredVerifier(unknown)
+				if err != nil {
+					t.Fatal(err)
+				}
+				record, err := NewCredentialRecord("credential-a", "application-a", stored, []Scope{ScopeModelsRead}, time.Time{}, false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				repository.lookup = func(context.Context, CredentialLookup) (CredentialRecord, bool, error) {
+					return record, true, nil
+				}
+			},
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -162,28 +178,42 @@ func TestHMACVerifierIsKeyedAndNonReversible(t *testing.T) {
 	if strings.Contains(firstLookup.Key(), credential) || len(firstLookup.Key()) != 43 {
 		t.Fatalf("lookup key is not a bounded non-reversible digest: %q", firstLookup.Key())
 	}
-	if !first.matches(firstStored, firstLookup.value) {
+	if firstLookup.value == firstStored.value {
+		t.Fatal("lookup key and stored verifier did not use separate domains")
+	}
+	if !first.matches(firstStored, first.digest([]byte(credential))) {
 		t.Fatal("stored verifier did not match its derived digest")
 	}
-	if first.matches(firstStored, secondLookup.value) {
-		t.Fatal("stored verifier accepted a digest derived with another key")
+	if first.matches(firstStored, firstLookup.value) {
+		t.Fatal("stored verifier accepted the lookup-domain digest")
+	}
+	if first.matches(firstStored, second.digest([]byte(credential))) {
+		t.Fatal("stored verifier accepted a verifier digest derived with another key")
 	}
 }
 
 func TestAuthorizeScopeDeniesMissingGrant(t *testing.T) {
-	principal := PrincipalContext{Scopes: []Scope{ScopeModelsRead}}
+	principal := PrincipalContext{Scopes: []Scope{ScopeChatCompletionsCreate, ScopeModelsRead}}
 	if failure := AuthorizeScope(principal, ScopeModelsRead); failure != nil {
 		t.Fatalf("AuthorizeScope(models) = %v", failure)
 	}
-	failure := AuthorizeScope(principal, ScopeChatCompletionsCreate)
-	if failure == nil || failure.Code != protocol.FailureAuthForbidden || failure.Domain != protocol.DomainAuth || failure.HTTPStatus != 403 {
-		t.Fatalf("AuthorizeScope(chat) = %#v", failure)
+	failure := AuthorizeScope(principal, Scope("unknown"))
+	if failure == nil || failure.Code != protocol.FailureAuthForbidden || failure.Domain != protocol.DomainAuth ||
+		failure.HTTPStatus != 403 || failure.RetryDisposition != protocol.RetryNever {
+		t.Fatalf("AuthorizeScope(unknown) = %#v", failure)
 	}
 }
 
 func TestAuthenticationIsConcurrent(t *testing.T) {
 	credential := fixtureCredential("credential-a", 0x41)
-	authenticator, repository, _ := fixtureAuthenticator(t, credential, "application-a", []Scope{ScopeModelsRead}, time.Time{}, false)
+	authenticator, repository, _ := fixtureAuthenticatorWithOptions(
+		t, credential, "application-a", []Scope{ScopeModelsRead}, time.Time{}, false,
+		func(options *Options) {
+			options.lookupContext = func(parent context.Context, _ time.Duration) (context.Context, context.CancelFunc) {
+				return context.WithCancel(parent)
+			}
+		},
+	)
 	const goroutines = 128
 	var wait sync.WaitGroup
 	start := make(chan struct{})
@@ -235,7 +265,8 @@ func TestAuthenticationConcurrencyLimitRejectsBeforeLookup(t *testing.T) {
 	<-entered
 
 	_, failure := authenticator.Authenticate(t.Context(), []string{"Bearer " + credential})
-	if failure == nil || failure.Code != protocol.FailureGatewayOverloaded || repository.calls.Load() != 1 {
+	if failure == nil || failure.Code != protocol.FailureGatewayOverloaded ||
+		failure.RetryDisposition != protocol.RetryPreOutputSameOrAlternate || repository.calls.Load() != 1 {
 		t.Fatalf("concurrency rejection = %#v, calls %d", failure, repository.calls.Load())
 	}
 	close(release)
@@ -245,14 +276,15 @@ func TestAuthenticationConcurrencyLimitRejectsBeforeLookup(t *testing.T) {
 func TestAuthenticationMapsSnapshotAndLookupFailures(t *testing.T) {
 	credential := fixtureCredential("credential-a", 0x41)
 	testCases := []struct {
-		name string
-		err  error
-		code protocol.FailureCode
+		name  string
+		err   error
+		code  protocol.FailureCode
+		retry protocol.RetryDisposition
 	}{
-		{name: "unavailable", err: ErrSnapshotUnavailable, code: protocol.FailureStorageUnavailable},
-		{name: "stale", err: ErrSnapshotStale, code: protocol.FailureStorageUnavailable},
-		{name: "deadline", err: context.DeadlineExceeded, code: protocol.FailureGatewayOverloaded},
-		{name: "repository", err: errors.New("repository failure"), code: protocol.FailureStorageUnavailable},
+		{name: "unavailable", err: ErrSnapshotUnavailable, code: protocol.FailureStorageUnavailable, retry: protocol.RetryNever},
+		{name: "stale", err: ErrSnapshotStale, code: protocol.FailureStorageUnavailable, retry: protocol.RetryNever},
+		{name: "deadline", err: context.DeadlineExceeded, code: protocol.FailureGatewayOverloaded, retry: protocol.RetryPreOutputSameOrAlternate},
+		{name: "repository", err: errors.New("repository failure"), code: protocol.FailureStorageUnavailable, retry: protocol.RetryNever},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -267,7 +299,8 @@ func TestAuthenticationMapsSnapshotAndLookupFailures(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, failure := authenticator.Authenticate(t.Context(), []string{"Bearer " + credential})
-			if failure == nil || failure.Code != testCase.code || failure.SafeMessage != "Gateway temporarily unavailable." {
+			if failure == nil || failure.Code != testCase.code || failure.SafeMessage != "Gateway temporarily unavailable." ||
+				failure.RetryDisposition != testCase.retry {
 				t.Fatalf("Authenticate() failure = %#v", failure)
 			}
 		})
@@ -297,7 +330,7 @@ func TestAuthenticationFailsClosedWhenRepositoryReturnsAfterDeadline(t *testing.
 		t.Fatal(err)
 	}
 	_, failure := authenticator.Authenticate(t.Context(), []string{"Bearer " + credential})
-	if failure == nil || failure.Code != protocol.FailureGatewayOverloaded {
+	if failure == nil || failure.Code != protocol.FailureGatewayOverloaded || failure.RetryDisposition != protocol.RetryPreOutputSameOrAlternate {
 		t.Fatalf("Authenticate() failure = %#v", failure)
 	}
 }
@@ -317,6 +350,20 @@ func TestAuthenticatorRejectsLimitsOutsideThreatModel(t *testing.T) {
 	}
 }
 
+func TestNewCredentialRecordRejectsUnpresentableCredentialID(t *testing.T) {
+	credential := fixtureCredential("credential-a", 0x41)
+	verifier := fixtureVerifier(t, 0x11)
+	_, stored, err := verifier.DeriveStoredVerifier(credential)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, credentialID := range []string{"credential_bad", ".credential", "crédential"} {
+		if _, err := NewCredentialRecord(credentialID, "application-a", stored, []Scope{ScopeModelsRead}, time.Time{}, false); err == nil {
+			t.Fatalf("NewCredentialRecord(%q) error = nil", credentialID)
+		}
+	}
+}
+
 func fixtureAuthenticator(
 	t *testing.T,
 	credential string,
@@ -324,6 +371,19 @@ func fixtureAuthenticator(
 	scopes []Scope,
 	expiresAt time.Time,
 	revoked bool,
+) (*Authenticator, *testRepository, *HMACVerifier) {
+	t.Helper()
+	return fixtureAuthenticatorWithOptions(t, credential, applicationID, scopes, expiresAt, revoked, nil)
+}
+
+func fixtureAuthenticatorWithOptions(
+	t *testing.T,
+	credential string,
+	applicationID string,
+	scopes []Scope,
+	expiresAt time.Time,
+	revoked bool,
+	configure func(*Options),
 ) (*Authenticator, *testRepository, *HMACVerifier) {
 	t.Helper()
 	verifier := fixtureVerifier(t, 0x11)
@@ -339,6 +399,9 @@ func fixtureAuthenticator(
 	repository := &testRepository{records: map[string]CredentialRecord{lookup.Key(): record}}
 	options := DefaultOptions()
 	options.Clock = func() time.Time { return fixtureNow }
+	if configure != nil {
+		configure(&options)
+	}
 	authenticator, err := NewAuthenticator(repository, verifier, options)
 	if err != nil {
 		t.Fatal(err)
@@ -373,7 +436,8 @@ func assertAuthenticationFailure(t *testing.T, failure *protocol.CanonicalError)
 		t.Fatal("Authenticate() failure = nil")
 	}
 	if failure.Code != protocol.FailureAuthInvalidCredential || failure.Domain != protocol.DomainAuth ||
-		failure.SafeMessage != "Authentication failed." || failure.HTTPStatus != 401 || failure.Validation != nil {
+		failure.RetryDisposition != protocol.RetryNever || failure.SafeMessage != "Authentication failed." ||
+		failure.HTTPStatus != 401 || failure.Validation != nil {
 		t.Fatalf("Authenticate() failure = %#v", failure)
 	}
 }

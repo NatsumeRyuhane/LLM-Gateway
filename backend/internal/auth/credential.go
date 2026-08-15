@@ -21,7 +21,10 @@ const (
 	verifierKeyBytes            = 32
 )
 
-var credentialDigestDomain = []byte("llm-gateway/application-credential/v1\x00")
+var (
+	credentialLookupDomain   = []byte("llm-gateway/application-credential/lookup/v1\x00")
+	credentialVerifierDomain = []byte("llm-gateway/application-credential/verifier/v1\x00")
+)
 
 // CredentialClass prevents repository records from crossing authenticator
 // classes even when a storage implementation returns the wrong record.
@@ -56,6 +59,7 @@ type HMACVerifier struct {
 // Keeping the operations narrow prevents repositories from receiving bearer
 // values and prevents non-constant-time implementations outside this package.
 type CredentialVerifier interface {
+	lookupDigest([]byte) [sha256.Size]byte
 	digest([]byte) [sha256.Size]byte
 	matches(StoredVerifier, [sha256.Size]byte) bool
 }
@@ -79,13 +83,20 @@ func (v *HMACVerifier) DeriveStoredVerifier(credential string) (CredentialLookup
 		return CredentialLookup{}, StoredVerifier{}, err
 	}
 	defer presented.clear()
-	digest := v.digest(presented.raw)
-	return CredentialLookup{value: digest}, StoredVerifier{value: digest}, nil
+	return CredentialLookup{value: v.lookupDigest(presented.raw)}, StoredVerifier{value: v.digest(presented.raw)}, nil
+}
+
+func (v *HMACVerifier) lookupDigest(credential []byte) [sha256.Size]byte {
+	return v.digestDomain(credentialLookupDomain, credential)
 }
 
 func (v *HMACVerifier) digest(credential []byte) [sha256.Size]byte {
+	return v.digestDomain(credentialVerifierDomain, credential)
+}
+
+func (v *HMACVerifier) digestDomain(domain, credential []byte) [sha256.Size]byte {
 	digest := hmac.New(sha256.New, v.key[:])
-	_, _ = digest.Write(credentialDigestDomain)
+	_, _ = digest.Write(domain)
 	_, _ = digest.Write(credential)
 	var result [sha256.Size]byte
 	copy(result[:], digest.Sum(nil))
@@ -188,7 +199,7 @@ func NewCredentialRecord(
 	revoked bool,
 ) (CredentialRecord, error) {
 	normalizedScopes, ok := normalizeScopes(scopes)
-	if !validStableID(credentialID) || !validStableID(applicationID) || !ok || verifier == (StoredVerifier{}) {
+	if !validCredentialID(credentialID) || !validStableID(applicationID) || !ok || verifier == (StoredVerifier{}) {
 		return CredentialRecord{}, errors.New("invalid application credential record")
 	}
 	return CredentialRecord{

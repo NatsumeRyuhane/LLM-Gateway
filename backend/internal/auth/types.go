@@ -58,10 +58,12 @@ type PrincipalContext struct {
 
 // HasScope reports whether the validated principal carries one exact grant.
 func (p PrincipalContext) HasScope(required Scope) bool {
-	index := sort.Search(len(p.Scopes), func(index int) bool {
-		return p.Scopes[index] >= required
-	})
-	return index < len(p.Scopes) && p.Scopes[index] == required
+	for _, scope := range p.Scopes {
+		if scope == required {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeScopes(scopes []Scope) ([]Scope, bool) {

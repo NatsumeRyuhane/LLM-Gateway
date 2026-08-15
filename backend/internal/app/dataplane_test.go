@@ -33,7 +33,7 @@ func (a *fakeApplicationAuthenticator) Authenticate(_ context.Context, values []
 func TestDataPlaneBoundaryProducesTypedModelsInput(t *testing.T) {
 	verifier := &fakeApplicationAuthenticator{principal: applicationPrincipal(auth.ScopeModelsRead)}
 	boundary := newTestDataPlaneBoundary(t, verifier)
-	request := httptest.NewRequest(http.MethodGet, openai.ModelsPath, nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, openai.ModelsPath, nil)
 	request.Header.Set("Authorization", "Bearer canary-application-secret")
 	request.Header.Set(openai.HeaderConversationID, " conversation-1 ")
 	request.Header.Set("X-Authenticated-User", "attacker-selected-user")
@@ -62,7 +62,7 @@ func TestDataPlaneBoundaryProducesTypedModelsInput(t *testing.T) {
 func TestDataPlaneBoundaryBindsAndRemovesRawChatAttribution(t *testing.T) {
 	verifier := &fakeApplicationAuthenticator{principal: applicationPrincipal(auth.ScopeChatCompletionsCreate)}
 	boundary := newTestDataPlaneBoundary(t, verifier)
-	request := httptest.NewRequest(http.MethodPost, openai.ChatCompletionsPath, strings.NewReader(`{
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, openai.ChatCompletionsPath, strings.NewReader(`{
 		"model":"general", "messages":[{"role":"user","content":"hello"}]
 	}`))
 	request.Header.Set("Content-Type", openai.MediaTypeJSON)
@@ -91,7 +91,7 @@ func TestDataPlaneBoundaryBindsAndRemovesRawChatAttribution(t *testing.T) {
 func TestDataPlaneBoundaryLeavesAttributionSyntaxToPublicCodec(t *testing.T) {
 	verifier := &fakeApplicationAuthenticator{principal: applicationPrincipal(auth.ScopeModelsRead)}
 	boundary := newTestDataPlaneBoundary(t, verifier)
-	request := httptest.NewRequest(http.MethodGet, openai.ModelsPath, nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, openai.ModelsPath, nil)
 	request.Header.Set("Authorization", "Bearer canary-application-secret")
 	request.Header.Add(openai.HeaderConversationID, "conversation-a")
 	request.Header.Add(openai.HeaderConversationID, "conversation-b")
@@ -107,7 +107,7 @@ func TestDataPlaneBoundaryAuthorizesBeforeReadingChatBody(t *testing.T) {
 	verifier := &fakeApplicationAuthenticator{principal: applicationPrincipal(auth.ScopeModelsRead)}
 	boundary := newTestDataPlaneBoundary(t, verifier)
 	body := &trackingBody{Reader: strings.NewReader(`{"model":"general"}`)}
-	request := httptest.NewRequest(http.MethodPost, openai.ChatCompletionsPath, nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, openai.ChatCompletionsPath, nil)
 	request.Body = body
 	request.Header.Set("Content-Type", openai.MediaTypeJSON)
 	request.Header.Set("Authorization", "Bearer canary-application-secret")
@@ -125,7 +125,7 @@ func TestDataPlaneBoundaryAuthenticationFailurePrecedesDecoding(t *testing.T) {
 	}}
 	boundary := newTestDataPlaneBoundary(t, verifier)
 	body := &trackingBody{Reader: strings.NewReader(`not-json`)}
-	request := httptest.NewRequest(http.MethodPost, openai.ChatCompletionsPath, nil)
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, openai.ChatCompletionsPath, nil)
 	request.Body = body
 
 	_, failure := boundary.AuthenticateChatCompletionsRequest(request, dataPlaneMetadata)
