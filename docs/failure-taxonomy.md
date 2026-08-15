@@ -125,6 +125,7 @@ from its namespace. Provider text is evidence, not a client-safe message.
 | --- | --- | --- | --- |
 | `gateway.overloaded` | Bounded local concurrency/queue capacity is exhausted | `pre_output_same_or_alternate` only if not admitted upstream | Included |
 | `gateway.internal` | Invariant violation or unclassified internal error | `pre_output_alternate` only when proven safe | Included |
+| `gateway.downstream_write_failed` | The gateway could not write or flush the downstream response | Client decides after a potentially visible commit; otherwise never | Included |
 | `gateway.shutdown` | Instance is draining and cannot accept new work | Caller retry on another instance | Included according to deployment SLO |
 | `storage.unavailable` | Required durable state cannot be read/written | Depends on operation and documented degraded mode | Included when it blocks the data plane |
 | `telemetry.export_failed` | Exporter/collector rejected or could not receive telemetry | Never changes an in-flight model response | Observability SLI, not data-plane availability |

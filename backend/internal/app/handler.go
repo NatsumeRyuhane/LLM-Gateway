@@ -123,6 +123,7 @@ func (h *DataPlaneHandler) serveModels(writer http.ResponseWriter, request *http
 	metadata := openai.RequestMetadata{RequestID: requestID, Deadline: h.deadline(request)}
 	decoded, authFailure := h.boundary.AuthenticateModelsRequest(request, metadata)
 	if authFailure != nil {
+		setAllowHeader(writer, authFailure, http.MethodGet)
 		h.finishFailure(writer, requestID, authFailure, &record)
 		return
 	}
@@ -132,7 +133,7 @@ func (h *DataPlaneHandler) serveModels(writer http.ResponseWriter, request *http
 		h.finishFailure(writer, requestID, encodeFailure, &record)
 		return
 	}
-	if _, writeErr := writeEncoded(writer, encoded); writeErr != nil {
+	if writeErr := writeEncoded(writer, encoded); writeErr != nil {
 		record.Outcome = telemetry.OutcomeIncomplete
 		return
 	}
@@ -159,6 +160,7 @@ func (h *DataPlaneHandler) serveChat(writer http.ResponseWriter, request *http.R
 	metadata := openai.RequestMetadata{RequestID: requestID, Deadline: h.deadline(request)}
 	decoded, authFailure := h.boundary.AuthenticateChatCompletionsRequest(request, metadata)
 	if authFailure != nil {
+		setAllowHeader(writer, authFailure, http.MethodPost)
 		h.finishFailure(writer, requestID, authFailure, &requestRecord)
 		return
 	}
@@ -260,8 +262,8 @@ func (h *DataPlaneHandler) serveBufferedAttempt(
 	}
 	attemptRecord.DownstreamCommitted = true
 	attemptRecord.DownstreamCommittedAt = h.now().UTC()
-	if _, writeErr := writeEncoded(writer, encoded); writeErr != nil {
-		failure = downstreamFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), true, false)
+	if writeErr := writeEncoded(writer, encoded); writeErr != nil {
+		failure = downstreamWriteFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), true, false)
 		h.finishAttemptWithoutEnvelope(failure, requestRecord, decision, attemptRecord)
 		return
 	}
@@ -321,11 +323,11 @@ func (h *DataPlaneHandler) serveStreamingAttempt(
 		}
 		if _, err := writeAll(writer, frames); err != nil {
 			cancel()
-			return downstreamFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), true, attemptRecord.ToolActionable)
+			return downstreamWriteFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), true, attemptRecord.ToolActionable)
 		}
 		if err := controller.Flush(); err != nil {
 			cancel()
-			return downstreamFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), true, attemptRecord.ToolActionable)
+			return downstreamWriteFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), true, attemptRecord.ToolActionable)
 		}
 		return nil
 	}
@@ -339,7 +341,7 @@ func (h *DataPlaneHandler) serveStreamingAttempt(
 		return
 	}
 	if !encoder.Successful() || !attemptRecord.DownstreamCommitted {
-		failure = downstreamFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), attemptRecord.DownstreamCommitted, attemptRecord.ToolActionable)
+		failure = streamInvariantFailure(validated.Canonical().RequestID, attempt.ID, route.ID(), attemptRecord.DownstreamCommitted, attemptRecord.ToolActionable)
 		if attemptRecord.DownstreamCommitted {
 			h.finishAttemptWithoutEnvelope(failure, requestRecord, decision, attemptRecord)
 			return
@@ -363,7 +365,7 @@ func (h *DataPlaneHandler) finishAttemptFailure(
 ) {
 	h.finishAttemptWithoutEnvelope(failure, requestRecord, decision, attemptRecord)
 	encoded := h.codec.EncodeError(failure, correlationVisibility())
-	_, _ = writeEncoded(writer, encoded)
+	_ = writeEncoded(writer, encoded)
 }
 
 func (h *DataPlaneHandler) finishAttemptWithoutEnvelope(
@@ -389,7 +391,7 @@ func (h *DataPlaneHandler) finishFailure(writer http.ResponseWriter, requestID s
 	record.Outcome = outcomeForFailure(failure, false)
 	record.FailureDomain = failure.Domain
 	record.FailureCode = failure.Code
-	_, _ = writeEncoded(writer, h.codec.EncodeError(failure, openai.CorrelationVisibility{}))
+	_ = writeEncoded(writer, h.codec.EncodeError(failure, openai.CorrelationVisibility{}))
 }
 
 func (h *DataPlaneHandler) deadline(request *http.Request) time.Time {
@@ -427,11 +429,11 @@ func correlationVisibility() openai.CorrelationVisibility {
 	return openai.CorrelationVisibility{AttemptID: true, RouteID: true}
 }
 
-func writeEncoded(writer http.ResponseWriter, response openai.EncodedResponse) (bool, error) {
+func writeEncoded(writer http.ResponseWriter, response openai.EncodedResponse) error {
 	copyHeaders(writer.Header(), response.Header)
 	writer.WriteHeader(response.Status)
 	_, err := writeAll(writer, response.Body)
-	return true, err
+	return err
 }
 
 func writeAll(writer io.Writer, body []byte) (int, error) {
@@ -478,16 +480,35 @@ func attachCorrelation(failure *protocol.CanonicalError, requestID, attemptID, r
 	return &attached
 }
 
-func downstreamFailure(requestID, attemptID, routeID string, outputVisible, toolActionable bool) *protocol.CanonicalError {
+func downstreamWriteFailure(requestID, attemptID, routeID string, outputVisible, toolActionable bool) *protocol.CanonicalError {
 	retry := protocol.RetryNever
 	if outputVisible || toolActionable {
 		retry = protocol.RetryClientDecides
 	}
 	return &protocol.CanonicalError{
-		Code: protocol.FailureClientCancelled, Domain: protocol.DomainClient,
-		RetryDisposition: retry, SafeMessage: "The downstream connection closed.", HTTPStatus: 499,
+		Code: protocol.FailureGatewayDownstreamWriteFailed, Domain: protocol.DomainGateway,
+		RetryDisposition: retry, SafeMessage: "The gateway could not write the downstream response.", HTTPStatus: http.StatusInternalServerError,
 		RequestID: requestID, AttemptID: attemptID, RouteID: routeID,
 		OutputVisible: outputVisible, ToolActionable: toolActionable,
+	}
+}
+
+func streamInvariantFailure(requestID, attemptID, routeID string, outputVisible, toolActionable bool) *protocol.CanonicalError {
+	retry := protocol.RetryNever
+	if outputVisible || toolActionable {
+		retry = protocol.RetryClientDecides
+	}
+	return &protocol.CanonicalError{
+		Code: protocol.FailureGatewayInternal, Domain: protocol.DomainGateway,
+		RetryDisposition: retry, SafeMessage: "The gateway could not complete the streaming response.", HTTPStatus: http.StatusInternalServerError,
+		RequestID: requestID, AttemptID: attemptID, RouteID: routeID,
+		OutputVisible: outputVisible, ToolActionable: toolActionable,
+	}
+}
+
+func setAllowHeader(writer http.ResponseWriter, failure *protocol.CanonicalError, method string) {
+	if failure != nil && failure.HTTPStatus == http.StatusMethodNotAllowed {
+		writer.Header().Set("Allow", method)
 	}
 }
 

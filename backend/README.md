@@ -58,7 +58,11 @@ the rejected variable without repeating its value.
 
 - `cmd/gateway` and `cmd/mock-provider` are process entry points.
 - `internal/app` owns construction, the bounded HTTP lifecycle, and the
-  authenticated single-route data-plane handler.
+  authenticated single-route data-plane handler. It composes authentication
+  with the public codec so handlers receive typed requests without raw identity
+  transport, then injects one application-authorized route and performs exactly
+  one buffered or streaming provider attempt with gateway-generated request,
+  decision, response, and attempt identifiers.
 - `internal/config` owns configuration loading and validation.
 - `internal/health` owns process and route-health state.
 - `internal/protocol` owns provider-neutral Chat Completions requests, responses,
@@ -71,11 +75,6 @@ the rejected variable without repeating its value.
   typed principals, exact data-plane scopes, and application-bound request
   attribution. The concrete security contract is in
   [`docs/authentication.md`](../docs/authentication.md).
-- `internal/app` composes authentication with the public codec so handlers receive
-  typed authenticated requests and never raw identity transport. The first
-  vertical slice injects exactly one application-authorized route and performs
-  exactly one buffered or streaming provider attempt with gateway-generated
-  request, decision, response, and attempt identifiers.
 - `internal/provider` owns the consumer-facing adapter contract and immutable
   validated route inputs. `internal/provider/openai` translates one
   OpenAI-compatible upstream Chat Completions route, validates buffered and

@@ -43,7 +43,11 @@ func TestAuthenticatedModelsAndBufferedVerticalSlice(t *testing.T) {
 	gateway := httptest.NewServer(handler)
 	defer gateway.Close()
 
-	unauthorized, err := http.Get(gateway.URL + openai.ModelsPath)
+	unauthorizedRequest, err := http.NewRequestWithContext(t.Context(), http.MethodGet, gateway.URL+openai.ModelsPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unauthorized, err := http.DefaultClient.Do(unauthorizedRequest)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,6 +181,50 @@ func TestStreamingFailureBoundariesDoNotCommitFalseSuccess(t *testing.T) {
 	}
 }
 
+func TestKnownPathsReturnMethodNotAllowedAfterAuthentication(t *testing.T) {
+	handler := newVerticalSliceHandler(t, "https://provider.example/v1/chat/completions", nil)
+	for _, test := range []struct {
+		name       string
+		path       string
+		allow      string
+		authorized bool
+		wantStatus int
+	}{
+		{name: "models", path: openai.ModelsPath, allow: http.MethodGet, authorized: true, wantStatus: http.StatusMethodNotAllowed},
+		{name: "chat", path: openai.ChatCompletionsPath, allow: http.MethodPost, authorized: true, wantStatus: http.StatusMethodNotAllowed},
+		{name: "authentication precedes allow metadata", path: openai.ModelsPath, wantStatus: http.StatusUnauthorized},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPut, test.path, nil)
+			if test.authorized {
+				request.Header.Set("Authorization", "Bearer "+testApplicationCredential)
+			}
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.wantStatus || response.Header().Get("Allow") != test.allow {
+				t.Fatalf("status=%d Allow=%q body=%s", response.Code, response.Header().Get("Allow"), response.Body.String())
+			}
+		})
+	}
+}
+
+func TestIncompleteSuccessfulAdapterResultIsGatewayFailure(t *testing.T) {
+	evidence := &memoryEvidence{}
+	handler := newVerticalSliceHandlerWithAdapter(t, "https://provider.example/v1/chat/completions", evidence, incompleteStreamAdapter{})
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, openai.ChatCompletionsPath, strings.NewReader(`{"model":"gateway-model","messages":[{"role":"user","content":"hello"}],"stream":true}`))
+	request.Header.Set("Authorization", "Bearer "+testApplicationCredential)
+	request.Header.Set("Content-Type", openai.MediaTypeJSON)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError || !strings.Contains(response.Body.String(), `"code":"gateway.internal"`) {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	attempt := onlyAttempt(t, evidence)
+	if attempt.Terminal != telemetry.AttemptFailedPreOutput || attempt.FailureCode != protocol.FailureGatewayInternal || attempt.DownstreamCommitted {
+		t.Fatalf("invariant attempt = %#v", attempt)
+	}
+}
+
 func TestClientCancellationPropagatesBeforeAndAfterOutput(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -272,7 +320,7 @@ func TestDownstreamWriteAndFlushFailuresCancelUpstreamAndRecordPartial(t *testin
 			awaitSignal(t, dispatched, "upstream dispatch")
 			awaitSignal(t, cancelled, "upstream cancellation")
 			attempt := onlyAttempt(t, evidence)
-			if attempt.Terminal != telemetry.AttemptCancelledClient || !attempt.CanonicalOutputAccepted || !attempt.DownstreamCommitted {
+			if attempt.Terminal != telemetry.AttemptFailedPartial || attempt.FailureCode != protocol.FailureGatewayDownstreamWriteFailed || !attempt.CanonicalOutputAccepted || !attempt.DownstreamCommitted {
 				t.Fatalf("downstream failure attempt = %#v", attempt)
 			}
 			if writer.status != http.StatusOK || bytes.Contains(writer.body.Bytes(), []byte(`"error":`)) || bytes.Contains(writer.body.Bytes(), []byte("[DONE]")) {
@@ -280,6 +328,28 @@ func TestDownstreamWriteAndFlushFailuresCancelUpstreamAndRecordPartial(t *testin
 			}
 		})
 	}
+
+	t.Run("buffered write", func(t *testing.T) {
+		upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+			writer.Header().Set("Content-Type", openai.MediaTypeJSON)
+			_, _ = io.WriteString(writer, `{"id":"buffered-write-fail","object":"chat.completion","created":1786700000,"model":"provider-model","choices":[{"index":0,"message":{"role":"assistant","content":"visible"},"finish_reason":"stop"}]}`)
+		}))
+		defer upstream.Close()
+		evidence := &memoryEvidence{}
+		handler := newVerticalSliceHandler(t, upstream.URL, evidence)
+		request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, openai.ChatCompletionsPath, strings.NewReader(`{"model":"gateway-model","messages":[{"role":"user","content":"hello"}]}`))
+		request.Header.Set("Authorization", "Bearer "+testApplicationCredential)
+		request.Header.Set("Content-Type", openai.MediaTypeJSON)
+		writer := &failingResponseWriter{header: make(http.Header), failWrite: true}
+		handler.ServeHTTP(writer, request)
+		attempt := onlyAttempt(t, evidence)
+		if attempt.Terminal != telemetry.AttemptFailedPartial || attempt.FailureCode != protocol.FailureGatewayDownstreamWriteFailed || !attempt.CanonicalOutputAccepted || !attempt.DownstreamCommitted {
+			t.Fatalf("buffered downstream failure attempt = %#v", attempt)
+		}
+		if writer.status != http.StatusOK || bytes.Contains(writer.body.Bytes(), []byte(`"error":`)) {
+			t.Fatalf("writer status=%d body=%s", writer.status, writer.body.String())
+		}
+	})
 }
 
 func TestConcurrentVerticalSliceUsesIndependentRequestAndAttemptState(t *testing.T) {
@@ -306,8 +376,16 @@ func TestConcurrentVerticalSliceUsesIndependentRequestAndAttemptState(t *testing
 				errorsFound <- err
 				return
 			}
-			defer response.Body.Close()
-			_, _ = io.Copy(io.Discard, response.Body)
+			_, copyErr := io.Copy(io.Discard, response.Body)
+			closeErr := response.Body.Close()
+			if copyErr != nil {
+				errorsFound <- copyErr
+				return
+			}
+			if closeErr != nil {
+				errorsFound <- closeErr
+				return
+			}
 			if response.StatusCode != http.StatusOK {
 				errorsFound <- fmt.Errorf("status %d", response.StatusCode)
 				return
@@ -355,6 +433,11 @@ func (fixtureAuthenticator) Authenticate(_ context.Context, values []string) (au
 
 func newVerticalSliceHandler(t *testing.T, endpoint string, evidence EvidenceSink) http.Handler {
 	t.Helper()
+	return newVerticalSliceHandlerWithAdapter(t, endpoint, evidence, provideropenai.New())
+}
+
+func newVerticalSliceHandlerWithAdapter(t *testing.T, endpoint string, evidence EvidenceSink, adapter provider.Adapter) http.Handler {
+	t.Helper()
 	credential, err := provider.NewBearerCredential("provider-secret")
 	if err != nil {
 		t.Fatal(err)
@@ -387,7 +470,7 @@ func newVerticalSliceHandler(t *testing.T, endpoint string, evidence EvidenceSin
 		t.Fatal(err)
 	}
 	var sequence atomic.Uint64
-	handler, err := NewDataPlaneHandler(boundary, route, provideropenai.New(), evidence, DataPlaneHandlerOptions{
+	handler, err := NewDataPlaneHandler(boundary, route, adapter, evidence, DataPlaneHandlerOptions{
 		Now: time.Now, RequestTimeout: 10 * time.Second,
 		NewIdentifier: func(prefix string) (string, error) {
 			return fmt.Sprintf("%s-%d", prefix, sequence.Add(1)), nil
@@ -420,12 +503,28 @@ func chatRequest(ctx context.Context, gatewayURL, body string) (*http.Response, 
 
 func readResponseBody(t *testing.T, response *http.Response) []byte {
 	t.Helper()
-	defer response.Body.Close()
 	body, err := io.ReadAll(response.Body)
+	closeErr := response.Body.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
+	if closeErr != nil {
+		t.Fatal(closeErr)
+	}
 	return body
+}
+
+type incompleteStreamAdapter struct{}
+
+func (incompleteStreamAdapter) Buffered(context.Context, provider.Attempt, protocol.ValidatedChatRequest, provider.ValidatedRoute) (protocol.ValidatedChatResponse, *protocol.CanonicalError) {
+	return protocol.ValidatedChatResponse{}, &protocol.CanonicalError{
+		Code: protocol.FailureGatewayInternal, Domain: protocol.DomainGateway,
+		RetryDisposition: protocol.RetryNever, SafeMessage: "Unexpected buffered call.", HTTPStatus: http.StatusInternalServerError,
+	}
+}
+
+func (incompleteStreamAdapter) Stream(context.Context, provider.Attempt, protocol.ValidatedChatRequest, provider.ValidatedRoute, provider.EventSink) (protocol.StreamResult, *protocol.CanonicalError) {
+	return protocol.StreamResult{}, nil
 }
 
 func writeSSEFrames(writer http.ResponseWriter, frames ...string) {
