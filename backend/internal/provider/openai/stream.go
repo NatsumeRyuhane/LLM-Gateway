@@ -49,20 +49,20 @@ func (a *Adapter) Stream(ctx context.Context, attempt provider.Attempt, request 
 		return protocol.StreamResult{}, attachAttempt(classifyResponseStatus(response, route.Limits().MaxErrorBodyBytes), request, attempt, route)
 	}
 	if !sseContentType(response.Header.Get("Content-Type")) {
-		return protocol.StreamResult{}, attachAttempt(protocolFailure(protocol.FailureProtocolInvalidSSE, "The upstream stream is invalid.", "response.content_type", "must be text/event-stream"), request, attempt, route)
+		return protocol.StreamResult{}, attachAttempt(withProviderStatus(protocolFailure(protocol.FailureProtocolInvalidSSE, "The upstream stream is invalid.", "response.content_type", "must be text/event-stream"), response.StatusCode), request, attempt, route)
 	}
 
 	validator, validationFailure := protocol.NewStreamValidator(request, attempt.ID, route.ID())
 	if validationFailure != nil {
-		return protocol.StreamResult{}, attachAttempt(validationFailure, request, attempt, route)
+		return protocol.StreamResult{}, attachAttempt(withProviderStatus(validationFailure, response.StatusCode), request, attempt, route)
 	}
 	parser := streamParser{adapter: a, request: request, attempt: attempt, route: route, validator: validator, sink: sink}
 	parseFailure := parser.parse(response.Body)
 	if parseFailure != nil {
-		return protocol.StreamResult{}, attachAttempt(parseFailure, request, attempt, route)
+		return protocol.StreamResult{}, attachAttempt(withProviderStatus(parseFailure, response.StatusCode), request, attempt, route)
 	}
 	result, resultFailure := validator.Result()
-	return result, attachAttempt(resultFailure, request, attempt, route)
+	return result, attachAttempt(withProviderStatus(resultFailure, response.StatusCode), request, attempt, route)
 }
 
 type streamParser struct {

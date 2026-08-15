@@ -60,6 +60,19 @@ func attachAttempt(failure *protocol.CanonicalError, request protocol.ValidatedC
 	return &attached
 }
 
+func withProviderStatus(failure *protocol.CanonicalError, status int) *protocol.CanonicalError {
+	if failure == nil {
+		return nil
+	}
+	attached := *failure
+	if failure.Validation != nil {
+		validation := *failure.Validation
+		attached.Validation = &validation
+	}
+	attached.ProviderStatus = status
+	return &attached
+}
+
 func classifyTransport(err error) *protocol.CanonicalError {
 	if errors.Is(err, context.Canceled) {
 		return failure(protocol.FailureClientCancelled, protocol.DomainClient, protocol.RetryNever, 499, "The request was cancelled.")

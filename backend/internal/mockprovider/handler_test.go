@@ -89,6 +89,16 @@ func TestHandlerRejectsUnknownSurfaceAndModeMismatch(t *testing.T) {
 	}
 }
 
+func TestRateLimitProfileEmitsConfiguredRetryAfter(t *testing.T) {
+	handler := newTestHandler(t, "http.429_retry_after", 1, nil)
+	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "3" {
+		t.Fatalf("status = %d Retry-After = %q", response.Code, response.Header().Get("Retry-After"))
+	}
+}
+
 func runProfile(t *testing.T, profileID string, seed int64) (string, []Observation) {
 	t.Helper()
 	var mutex sync.Mutex

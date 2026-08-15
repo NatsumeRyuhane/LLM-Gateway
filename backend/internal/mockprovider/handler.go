@@ -66,15 +66,46 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	if err := state.reach(request.Context(), EventResponseHeadersReady); err != nil {
 		return
 	}
-	if profile.Behavior.Kind != "success_buffered" && profile.Behavior.Kind != "success_stream" {
+	h.serveProfile(writer, request, decoded, &state)
+}
+
+func (h *Handler) serveProfile(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
+	switch h.scenario.profile.Behavior.Kind {
+	case "success_buffered":
+		h.serveSuccessBuffered(writer, request, decoded, state)
+	case "success_stream":
+		h.serveSuccessStream(writer, request, decoded, state)
+	case "http_status":
+		h.serveHTTPStatus(writer, request, state)
+	case "oversized_buffered":
+		h.serveOversizedBuffered(writer, request, state)
+	case "oversized_sse":
+		h.serveOversizedSSE(writer, request, state)
+	case "malformed_json":
+		h.serveMalformedJSON(writer, request, state)
+	case "malformed_sse":
+		h.serveRawStream(writer, request, state, "event: message\ndata: {}\n\n", false)
+	case "malformed_sse_json":
+		h.serveRawStream(writer, request, state, "data: {\n\n", false)
+	case "early_eof_pre_output":
+		h.serveRawStream(writer, request, state, "", false)
+	case "early_eof_post_output":
+		h.serveEarlyEOFPostOutput(writer, request, decoded, state)
+	case "empty_output":
+		h.serveEmptyOutput(writer, request, decoded, state)
+	case "invalid_tool_arguments":
+		h.serveInvalidToolArguments(writer, request, decoded, state)
+	case "partial_tool_arguments":
+		h.servePartialToolArguments(writer, request, decoded, state)
+	case "structured_schema_violation":
+		h.serveStructuredViolation(writer, request, decoded, state)
+	case "invalid_event_order":
+		h.serveInvalidEventOrder(writer, request, decoded, state)
+	case "usage_inconsistent":
+		h.serveUsageInconsistent(writer, request, decoded, state)
+	default:
 		writeProviderError(writer, http.StatusNotImplemented, "profile_not_implemented")
-		return
 	}
-	if mode == ModeStreaming {
-		h.serveSuccessStream(writer, request, decoded, &state)
-		return
-	}
-	h.serveSuccessBuffered(writer, request, decoded, &state)
 }
 
 func decodeRequest(request *http.Request) (chatRequest, error) {
@@ -103,7 +134,7 @@ func (h *Handler) serveSuccessBuffered(writer http.ResponseWriter, request *http
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-	_ = json.NewEncoder(writer).Encode(map[string]any{
+	_ = writeJSON(writer, map[string]any{
 		"id": h.responseID(state.ordinal), "object": "chat.completion", "created": h.createdAt(), "model": decoded.Model,
 		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "deterministic buffered response"}, "finish_reason": "stop"}},
 		"usage":   map[string]any{"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
@@ -196,5 +227,7 @@ func writeSSE(writer io.Writer, value any) error {
 func writeProviderError(writer http.ResponseWriter, status int, code string) {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
-	_ = json.NewEncoder(writer).Encode(map[string]any{"error": map[string]any{"type": code, "code": code}})
+	_ = writeJSON(writer, map[string]any{"error": map[string]any{"type": code, "code": code}})
 }
+
+func writeJSON(writer io.Writer, value any) error { return json.NewEncoder(writer).Encode(value) }
