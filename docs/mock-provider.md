@@ -60,7 +60,7 @@ In-process tests select a profile and seed through the constructor. The
 standalone process selects one embedded profile at startup with:
 
 - `MOCK_PROVIDER_PROFILE`, defaulting to `success.buffered`; and
-- `MOCK_PROVIDER_SEED`, defaulting to `1`.
+- `MOCK_PROVIDER_SEED`, defaulting to `1`; and
 - `MOCK_PROVIDER_STEP_DELAY`, defaulting to `250ms` for each gated stream
   chunk and bounded from `0s` through `30s`.
 
@@ -107,6 +107,22 @@ provider credentials, endpoint URLs, raw errors, and user-controlled IDs.
 Gateway assertions use the existing metadata-only request, decision, and
 attempt evidence. Silent-degradation profiles must not synthesize a gateway
 failure or health transition merely because the fixture knows its label.
+
+## Verification shape
+
+Direct handler tests establish deterministic wire bytes, scenario isolation,
+manual lifecycle gates, cancellation, and startup configuration. Adapter
+contract tests consume every immediately observable provider-handler profile
+and compare its canonical failure fields with the versioned matrix. Typed
+transport harnesses cover DNS, TLS, and connection refusal without relying on
+the host network.
+
+Authenticated vertical-slice tests then send representative buffered and
+streaming profiles through the public codec, application authentication, route,
+real adapter, downstream encoder, and request/decision/attempt evidence. A
+downstream writer harness proves cancellation and partial terminal evidence.
+Silent profiles remain successful at this boundary while retaining their
+separate synthetic ground-truth label for M3 health work.
 
 ## Extension procedure
 

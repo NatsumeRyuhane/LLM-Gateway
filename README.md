@@ -39,6 +39,10 @@ Start with [the v0 product contract](docs/requirements.md),
 Protocol implementers should also read [the canonical protocol](docs/protocol.md)
 and [the v0 compatibility matrix](docs/compatibility-matrix.md).
 
+Reliability-test work must follow
+[the deterministic mock-provider contract](docs/mock-provider.md) and its
+versioned fault-injection matrix.
+
 Instrumentation and dashboard work must follow
 [the observability, privacy, and cardinality contract](docs/observability.md).
 

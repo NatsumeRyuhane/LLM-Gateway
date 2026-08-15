@@ -108,12 +108,13 @@ Interfaces are defined by the consuming package and kept narrow. Shared utility
 packages are avoided unless at least two stable consumers need the same concept.
 
 The initial scaffold materializes every boundary above in the single
-`backend/` module. `app`, `config`, `health`, `openai`, and `protocol` contain
-runtime behavior; the remaining packages start as documented boundaries until
-their vertical-slice behavior lands. `cmd/gateway` and `cmd/mock-provider` both use
-the shared lifecycle, but production packages do not import the mock-provider
-command. Issue #7 still owns deterministic response profiles, fault injection,
-and the guarded test-only control surface.
+`backend/` module. `app`, `config`, `health`, `openai`, `protocol`, and
+`mockprovider` contain runtime behavior; the remaining packages start as
+documented boundaries until their vertical-slice behavior lands. `cmd/gateway`
+and `cmd/mock-provider` both use the shared lifecycle. The latter composes the
+same immutable profile catalog and deterministic handler used by in-process
+tests, selected only at startup. Production gateway packages do not import the
+mock-provider package, and no mutable HTTP control surface exists.
 
 | Scaffold package | Initial responsibility |
 | --- | --- |
@@ -147,6 +148,11 @@ the child attempt context immediately; the adapter then closes its response body
 before handler return. Per-request state, identifiers, route snapshots, stream
 encoders, and evidence records are local to the handler invocation, so
 concurrent tests share no mutable route, credential, or upstream fault state.
+The reusable mock provider now exercises this same public boundary for
+buffered, streaming, status, protocol, cancellation, partial-output, and silent
+semantic profiles. DNS, TLS, connection refusal, and downstream disconnect
+remain faithful harness injections because an HTTP upstream handler cannot
+produce those boundaries honestly.
 
 The command does not invent a route-registration or credential-loading surface.
 Production route persistence and administration remain later control-plane work;
