@@ -411,6 +411,25 @@ AttemptRecord gateway.attempt.v0
   schema_version
 ```
 
+The M1 single-route slice materializes these schemas as typed metadata-only
+records in `internal/telemetry` and emits them through an `internal/app`
+consumer-owned test sink. Its attempt record keeps
+`canonical_output_accepted`/`canonical_accepted_at` separate from
+`downstream_committed`/`downstream_committed_at`; the former is derived from
+canonical event validation, while the latter is a handler-owned monotonic latch
+set before the first status/header/write/flush boundary that can expose
+model-derived bytes. Neither field is inferred from the other.
+
+The slice records one request terminal for every handled public endpoint, one
+decision for each authenticated Chat Completions target resolution, and exactly
+one attempt record for each admitted dispatch. Records contain bounded IDs,
+operation/traffic/terminal classifications, registered target and route IDs,
+durations, token counts, provenance, provider status, and stable failure codes.
+Their Go types have no fields for HTTP headers, credentials, endpoint URLs,
+prompt/completion/refusal bodies, tool arguments, provider bodies, or raw errors.
+Exporter wiring and durable storage remain deferred; a missing sink degrades to
+an explicit no-op and cannot change response bytes or attempt selection.
+
 The record transaction/enqueue boundary follows the architecture contract. If a
 complete record cannot be persisted, the request retains an explicit incomplete
 record or write-failure counter; it must not disappear silently. Replay tests

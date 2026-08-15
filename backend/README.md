@@ -57,7 +57,8 @@ the rejected variable without repeating its value.
 ## Package boundaries
 
 - `cmd/gateway` and `cmd/mock-provider` are process entry points.
-- `internal/app` owns construction and the bounded HTTP lifecycle.
+- `internal/app` owns construction, the bounded HTTP lifecycle, and the
+  authenticated single-route data-plane handler.
 - `internal/config` owns configuration loading and validation.
 - `internal/health` owns process and route-health state.
 - `internal/protocol` owns provider-neutral Chat Completions requests, responses,
@@ -71,14 +72,21 @@ the rejected variable without repeating its value.
   attribution. The concrete security contract is in
   [`docs/authentication.md`](../docs/authentication.md).
 - `internal/app` composes authentication with the public codec so handlers receive
-  typed authenticated requests and never raw identity transport.
+  typed authenticated requests and never raw identity transport. The first
+  vertical slice injects exactly one application-authorized route and performs
+  exactly one buffered or streaming provider attempt with gateway-generated
+  request, decision, response, and attempt identifiers.
 - `internal/provider` owns the consumer-facing adapter contract and immutable
   validated route inputs. `internal/provider/openai` translates one
   OpenAI-compatible upstream Chat Completions route, validates buffered and
   incremental SSE success paths, creates fresh allowlisted outbound requests,
   places route-owned credentials, and closes all upstream response bodies.
-- `routing`, `accounting`, `telemetry`, `storage`, and `controlapi` reserve the
-  remaining accepted domain boundaries for the vertical slice.
+- `internal/telemetry` defines bounded metadata-only request, decision, attempt,
+  latency, usage, output-acceptance, downstream-commit, and terminal evidence
+  records. Exporters remain deferred.
+- `routing`, `accounting`, `storage`, and `controlapi` reserve the remaining
+  accepted domain boundaries. General route selection, retry, and fallback are
+  deliberately absent from the single-route slice.
 
 Unit tests stay beside their packages. Root `tests/` remains reserved for
 cross-service, end-to-end, load, replay, and fault assets.
