@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/NatsumeRyuhane/LLM-Gateway/backend/internal/mockprovider/fixtures/v0/schema.json",
+  "title": "Gateway mock-provider fault matrix v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "default_profile", "profiles"],
+  "properties": {
+    "schema_version": {"const": "gateway.mock-provider.matrix.v0"},
+    "default_profile": {"type": "string", "minLength": 1, "maxLength": 128},
+    "profiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/profile"}
+    }
+  },
+  "$defs": {
+    "profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "mode", "seed", "injection_layer", "behavior", "synchronization_events", "expected", "ground_truth", "detection_owner", "evidence"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$", "maxLength": 128},
+        "mode": {"enum": ["buffered", "streaming", "either", "external"]},
+        "seed": {"type": "integer"},
+        "injection_layer": {"enum": ["provider_handler", "transport_harness", "gateway_consumer", "downstream_client"]},
+        "behavior": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind"],
+          "properties": {
+            "kind": {"type": "string", "minLength": 1, "maxLength": 64},
+            "status": {"type": "integer", "minimum": 100, "maximum": 599},
+            "retry_after": {"type": "string", "maxLength": 128},
+            "bytes": {"type": "integer", "minimum": 1, "maximum": 16777216},
+            "failures_before_success": {"type": "integer", "minimum": 0, "maximum": 1000},
+            "steps": {"type": "array", "items": {"type": "string", "maxLength": 64}, "maxItems": 64}
+          }
+        },
+        "synchronization_events": {
+          "type": "array",
+          "items": {"enum": ["request.received", "response.headers_ready", "response.chunk_ready", "response.terminal_ready", "request.cancelled"]},
+          "uniqueItems": true,
+          "maxItems": 5
+        },
+        "expected": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["failure_code", "domain", "retry_disposition", "provider_status", "output_visible", "tool_actionable", "terminal"],
+          "properties": {
+            "failure_code": {"type": "string", "maxLength": 128},
+            "domain": {"type": "string", "maxLength": 32},
+            "retry_disposition": {"type": "string", "maxLength": 64},
+            "provider_status": {"type": "integer", "minimum": 0, "maximum": 599},
+            "output_visible": {"type": "boolean"},
+            "tool_actionable": {"type": "boolean"},
+            "terminal": {"type": "string", "maxLength": 64}
+          }
+        },
+        "ground_truth": {"type": "string", "minLength": 1, "maxLength": 128},
+        "detection_owner": {"enum": ["m1_immediate", "m3_health", "harness_only"]},
+        "evidence": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)*$", "maxLength": 64},
+          "uniqueItems": true,
+          "maxItems": 16
+        }
+      }
+    }
+  }
+}

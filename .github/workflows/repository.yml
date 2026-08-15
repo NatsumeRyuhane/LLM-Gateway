@@ -42,6 +42,7 @@ jobs:
             docs/protocol.md
             docs/compatibility-matrix.md
             docs/observability.md
+            docs/mock-provider.md
           )
           for path in "${required[@]}"; do
             test -s "$path" || {
