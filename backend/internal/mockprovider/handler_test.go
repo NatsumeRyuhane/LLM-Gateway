@@ -1,6 +1,7 @@
 package mockprovider
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestSuccessProfilesAreDeterministicAndIsolated(t *testing.T) {
@@ -99,6 +101,105 @@ func TestRateLimitProfileEmitsConfiguredRetryAfter(t *testing.T) {
 	}
 }
 
+func TestGatedStreamUsesEventsInsteadOfSleeps(t *testing.T) {
+	reached := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	scheduler := SchedulerFunc(func(ctx context.Context, event Event) error {
+		if event != EventResponseChunkReady {
+			return nil
+		}
+		once.Do(func() { close(reached) })
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+	handler := newTestHandlerWithOptions(t, "timing.slow_first_token", ScenarioOptions{Scheduler: scheduler})
+	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`))
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, request)
+		close(done)
+	}()
+	select {
+	case <-reached:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not reach the first-chunk gate")
+	}
+	select {
+	case <-done:
+		t.Fatal("stream completed before the gate was released")
+	default:
+	}
+	close(release)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream did not complete after gate release")
+	}
+	if response.Code != http.StatusOK || !strings.HasSuffix(response.Body.String(), "data: [DONE]\n\n") {
+		t.Fatalf("status = %d body = %q", response.Code, response.Body.String())
+	}
+}
+
+func TestAwaitCancellationObservesAndStopsRequest(t *testing.T) {
+	observed := make(chan Observation, 8)
+	handler := newTestHandlerWithOptions(t, "lifecycle.await_cancellation", ScenarioOptions{Observer: ObserverFunc(func(value Observation) { observed <- value })})
+	ctx, cancel := context.WithCancel(context.Background())
+	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`)).WithContext(ctx)
+	response := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		handler.ServeHTTP(response, request)
+		close(done)
+	}()
+	waitForObservation(t, observed, EventResponseHeadersReady)
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not return after cancellation")
+	}
+	waitForObservation(t, observed, EventRequestCancelled)
+}
+
+func TestFailureRecoveryStateIsScenarioLocal(t *testing.T) {
+	for scenarioIndex := 0; scenarioIndex < 2; scenarioIndex++ {
+		handler := newTestHandler(t, "sequence.recover_after_2", 11, nil)
+		for ordinal, wantStatus := range []int{http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusOK} {
+			request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != wantStatus {
+				t.Fatalf("scenario %d request %d status = %d, want %d", scenarioIndex, ordinal+1, response.Code, wantStatus)
+			}
+		}
+	}
+}
+
+func TestSilentProfilesRemainSuccessfulAndLabeled(t *testing.T) {
+	for _, profileID := range []string{"silent.parameter_ignored", "silent.context_truncation", "silent.degenerate_output", "silent.unstable_recovery"} {
+		t.Run(profileID, func(t *testing.T) {
+			observed := make(chan Observation, 8)
+			handler := newTestHandlerWithOptions(t, profileID, ScenarioOptions{Observer: ObserverFunc(func(value Observation) { observed <- value })})
+			request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false,"temperature":0.25}`))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+			}
+			observation := <-observed
+			if observation.GroundTruth == "" || observation.ProfileID != profileID {
+				t.Fatalf("observation = %#v", observation)
+			}
+		})
+	}
+}
+
 func runProfile(t *testing.T, profileID string, seed int64) (string, []Observation) {
 	t.Helper()
 	var mutex sync.Mutex
@@ -127,11 +228,16 @@ func runProfile(t *testing.T, profileID string, seed int64) (string, []Observati
 
 func newTestHandler(t *testing.T, profileID string, seed int64, observer Observer) *Handler {
 	t.Helper()
+	return newTestHandlerWithOptions(t, profileID, ScenarioOptions{Seed: seed, Observer: observer})
+}
+
+func newTestHandlerWithOptions(t *testing.T, profileID string, options ScenarioOptions) *Handler {
+	t.Helper()
 	catalog, err := LoadCatalog()
 	if err != nil {
 		t.Fatal(err)
 	}
-	scenario, err := NewScenario(catalog, profileID, ScenarioOptions{Seed: seed, Observer: observer})
+	scenario, err := NewScenario(catalog, profileID, options)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,4 +246,19 @@ func newTestHandler(t *testing.T, profileID string, seed int64, observer Observe
 		t.Fatal(err)
 	}
 	return handler
+}
+
+func waitForObservation(t *testing.T, observed <-chan Observation, want Event) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		select {
+		case observation := <-observed:
+			if observation.Event == want {
+				return
+			}
+		case <-deadline:
+			t.Fatalf("did not observe %s", want)
+		}
+	}
 }

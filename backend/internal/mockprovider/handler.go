@@ -75,6 +75,12 @@ func (h *Handler) serveProfile(writer http.ResponseWriter, request *http.Request
 		h.serveSuccessBuffered(writer, request, decoded, state)
 	case "success_stream":
 		h.serveSuccessStream(writer, request, decoded, state)
+	case "gated_stream":
+		h.serveSuccessStream(writer, request, decoded, state)
+	case "stall_after_headers", "await_cancellation":
+		h.serveUntilCancellation(writer, request, decoded, state)
+	case "fail_then_succeed":
+		h.serveFailureSequence(writer, request, decoded, state)
 	case "http_status":
 		h.serveHTTPStatus(writer, request, state)
 	case "oversized_buffered":
@@ -103,6 +109,18 @@ func (h *Handler) serveProfile(writer http.ResponseWriter, request *http.Request
 		h.serveInvalidEventOrder(writer, request, decoded, state)
 	case "usage_inconsistent":
 		h.serveUsageInconsistent(writer, request, decoded, state)
+	case "silent_parameter_ignored":
+		h.serveSyntheticSuccess(writer, request, decoded, state, "deterministic parameter baseline")
+	case "silent_context_truncation":
+		h.serveSyntheticSuccess(writer, request, decoded, state, "synthetic context prefix only")
+	case "silent_degenerate_output":
+		h.serveSyntheticSuccess(writer, request, decoded, state, "repeat repeat repeat repeat")
+	case "silent_unstable_recovery":
+		content := "stable synthetic recovery"
+		if state.ordinal <= uint64(h.scenario.profile.Behavior.FailuresBeforeSuccess) {
+			content = "repeat repeat repeat repeat"
+		}
+		h.serveSyntheticSuccess(writer, request, decoded, state, content)
 	default:
 		writeProviderError(writer, http.StatusNotImplemented, "profile_not_implemented")
 	}
@@ -129,6 +147,10 @@ func decodeRequest(request *http.Request) (chatRequest, error) {
 }
 
 func (h *Handler) serveSuccessBuffered(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
+	h.serveBufferedText(writer, request, decoded, state, "deterministic buffered response")
+}
+
+func (h *Handler) serveBufferedText(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState, content string) {
 	if err := state.reach(request.Context(), EventResponseTerminalReady); err != nil {
 		return
 	}
@@ -136,12 +158,16 @@ func (h *Handler) serveSuccessBuffered(writer http.ResponseWriter, request *http
 	writer.WriteHeader(http.StatusOK)
 	_ = writeJSON(writer, map[string]any{
 		"id": h.responseID(state.ordinal), "object": "chat.completion", "created": h.createdAt(), "model": decoded.Model,
-		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": "deterministic buffered response"}, "finish_reason": "stop"}},
+		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}},
 		"usage":   map[string]any{"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
 	})
 }
 
 func (h *Handler) serveSuccessStream(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
+	h.serveStreamText(writer, request, decoded, state, h.scenario.profile.Behavior.Steps)
+}
+
+func (h *Handler) serveStreamText(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState, steps []string) {
 	flusher, ok := writer.(http.Flusher)
 	if !ok {
 		writeProviderError(writer, http.StatusInternalServerError, "streaming_unsupported")
@@ -150,7 +176,6 @@ func (h *Handler) serveSuccessStream(writer http.ResponseWriter, request *http.R
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.WriteHeader(http.StatusOK)
 	identifier := h.responseID(state.ordinal)
-	steps := h.scenario.profile.Behavior.Steps
 	if len(steps) == 0 {
 		steps = []string{"deterministic ", "streaming response"}
 	}
