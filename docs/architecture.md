@@ -102,7 +102,7 @@ infrastructure packages -> domain interfaces and models
 | `telemetry` | Signal schemas, exporters, correlation, redaction | Business decisions inferred from metrics |
 | `storage` | PostgreSQL repositories and transaction boundaries | Domain policy |
 | `controlapi` | Versioned administrative HTTP contract | Direct dashboard coupling |
-| `app` | Construction, lifecycle, graceful shutdown | Domain behavior |
+| `app` | Construction, lifecycle, graceful shutdown, request/attempt orchestration | Routing policy or provider wire behavior |
 
 Interfaces are defined by the consuming package and kept narrow. Shared utility
 packages are avoided unless at least two stable consumers need the same concept.
@@ -121,6 +121,37 @@ and the guarded test-only control surface.
 | `health` | Keep liveness independent from atomic process readiness; route-health evidence remains a later addition |
 | `app` | Own the listener, standard-library HTTP server, serving goroutine, readiness transitions, and bounded shutdown |
 | `protocol` | Own immutable validated Chat Completions requests, derived capabilities, buffered responses, usage, failures, and stream lifecycle validation |
+
+### Authenticated single-route vertical slice
+
+The first working data path lives in `internal/app`. It authenticates before
+decoding target-bearing request content, exposes only the one model authorized
+for the authenticated application, and resolves exactly one injected validated
+provider route. The route source contains no candidate collection, policy
+ranking, health state, affinity, retry budget, or fallback loop. One admitted
+Chat Completions request therefore creates one gateway request ID, one decision
+ID, and exactly one attempt ID before one adapter dispatch.
+
+Buffered output is fully validated and encoded before the successful status and
+correlation headers are committed. Streaming output passes independently
+through the adapter's canonical validator and the public SSE encoder. The
+handler keeps two monotonic latches: canonical model-output acceptance and the
+first downstream commit that can expose model-derived bytes. It sets the latter
+before committing the successful status, route/attempt headers, first frame, or
+flush. A pre-output failure can still be represented by a JSON error; a failure
+after that latch produces neither a JSON envelope nor a success sentinel.
+
+The request context owns the single upstream attempt. Client cancellation and
+disconnect propagate through it. A downstream write or flush failure cancels
+the child attempt context immediately; the adapter then closes its response body
+before handler return. Per-request state, identifiers, route snapshots, stream
+encoders, and evidence records are local to the handler invocation, so
+concurrent tests share no mutable route, credential, or upstream fault state.
+
+The command does not invent a route-registration or credential-loading surface.
+Production route persistence and administration remain later control-plane work;
+the working slice is composed from an injected, already validated route and is
+exercised end to end with case-local upstream handlers.
 
 ### Process lifecycle
 

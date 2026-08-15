@@ -501,7 +501,7 @@ func knownFailureCode(code FailureCode) bool {
 	case FailureClientInvalidRequest, FailureClientCancelled, FailureClientDeadlineExceeded,
 		FailureAuthMissingCredential, FailureAuthInvalidCredential, FailureAuthForbidden, FailureQuotaGatewayExceeded,
 		FailurePolicyUnknownTarget, FailurePolicyNoEligibleRoute, FailurePolicyAllRoutesOpen, FailureCapabilityUnsupported, FailureAffinityRouteIneligible,
-		FailureGatewayOverloaded, FailureGatewayInternal, FailureGatewayShutdown, FailureStorageUnavailable, FailureTelemetryExportFailed,
+		FailureGatewayOverloaded, FailureGatewayInternal, FailureGatewayDownstreamWriteFailed, FailureGatewayShutdown, FailureStorageUnavailable, FailureTelemetryExportFailed,
 		FailureUpstreamDNSFailed, FailureUpstreamConnectFailed, FailureUpstreamTLSFailed, FailureUpstreamTimeout, FailureUpstreamStreamStalled,
 		FailureUpstreamRedirectRejected, FailureUpstreamResponseTooLarge, FailureUpstreamAuthenticationFailed, FailureUpstreamPermissionDenied,
 		FailureUpstreamRateLimited, FailureUpstreamServerError, FailureUpstreamContentPolicy, FailureUpstreamContextLimit, FailureUpstreamInvalidStatus,

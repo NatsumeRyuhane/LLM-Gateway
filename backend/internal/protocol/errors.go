@@ -23,6 +23,7 @@ const (
 	FailureAffinityRouteIneligible      FailureCode = "affinity.route_ineligible"
 	FailureGatewayOverloaded            FailureCode = "gateway.overloaded"
 	FailureGatewayInternal              FailureCode = "gateway.internal"
+	FailureGatewayDownstreamWriteFailed FailureCode = "gateway.downstream_write_failed"
 	FailureGatewayShutdown              FailureCode = "gateway.shutdown"
 	FailureStorageUnavailable           FailureCode = "storage.unavailable"
 	FailureTelemetryExportFailed        FailureCode = "telemetry.export_failed"

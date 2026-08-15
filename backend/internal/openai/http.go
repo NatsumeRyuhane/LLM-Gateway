@@ -36,7 +36,9 @@ func validateEndpoint(request *http.Request, method, path string) *protocol.Cano
 		return invalidRequest("request", "is required")
 	}
 	if request.Method != method {
-		return invalidRequest("method", "is not supported for this endpoint")
+		failure := invalidRequest("method", "is not supported for this endpoint")
+		failure.HTTPStatus = http.StatusMethodNotAllowed
+		return failure
 	}
 	if request.URL == nil || request.URL.Path != path || request.URL.RawPath != "" || request.URL.RawQuery != "" || request.URL.ForceQuery {
 		return invalidRequest("path", "must match the endpoint exactly without a query string")

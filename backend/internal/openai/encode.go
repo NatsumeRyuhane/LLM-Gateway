@@ -300,7 +300,7 @@ func knownPublicFailureCode(code protocol.FailureCode) bool {
 		protocol.FailureAuthMissingCredential, protocol.FailureAuthInvalidCredential, protocol.FailureAuthForbidden,
 		protocol.FailureQuotaGatewayExceeded, protocol.FailurePolicyUnknownTarget, protocol.FailurePolicyNoEligibleRoute,
 		protocol.FailurePolicyAllRoutesOpen, protocol.FailureCapabilityUnsupported, protocol.FailureAffinityRouteIneligible,
-		protocol.FailureGatewayOverloaded, protocol.FailureGatewayInternal, protocol.FailureGatewayShutdown,
+		protocol.FailureGatewayOverloaded, protocol.FailureGatewayInternal, protocol.FailureGatewayDownstreamWriteFailed, protocol.FailureGatewayShutdown,
 		protocol.FailureStorageUnavailable, protocol.FailureTelemetryExportFailed, protocol.FailureUpstreamDNSFailed,
 		protocol.FailureUpstreamConnectFailed, protocol.FailureUpstreamTLSFailed, protocol.FailureUpstreamTimeout,
 		protocol.FailureUpstreamStreamStalled, protocol.FailureUpstreamRedirectRejected, protocol.FailureUpstreamResponseTooLarge,
