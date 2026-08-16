@@ -14,7 +14,9 @@ func (h *Handler) serveHTTPStatus(writer http.ResponseWriter, request *http.Requ
 	if behavior.RetryAfter != "" {
 		writer.Header().Set("Retry-After", behavior.RetryAfter)
 	}
-	writeProviderError(writer, behavior.Status, "injected_status")
+	if err := writeProviderError(writer, behavior.Status, "injected_status"); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveOversizedBuffered(writer http.ResponseWriter, request *http.Request, state *requestState) {
@@ -23,14 +25,18 @@ func (h *Handler) serveOversizedBuffered(writer http.ResponseWriter, request *ht
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(writer, strings.Repeat("x", h.scenario.profile.Behavior.Bytes))
+	if _, err := io.WriteString(writer, strings.Repeat("x", h.scenario.profile.Behavior.Bytes)); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveOversizedSSE(writer http.ResponseWriter, request *http.Request, state *requestState) {
 	if err := state.reach(request.Context(), EventResponseChunkReady); err != nil {
 		return
 	}
-	h.serveRawStream(writer, request, state, "data: "+strings.Repeat("x", h.scenario.profile.Behavior.Bytes)+"\n\n", false)
+	if err := h.serveRawStream(writer, request, state, "data: "+strings.Repeat("x", h.scenario.profile.Behavior.Bytes)+"\n\n", false); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveMalformedJSON(writer http.ResponseWriter, request *http.Request, state *requestState) {
@@ -39,7 +45,9 @@ func (h *Handler) serveMalformedJSON(writer http.ResponseWriter, request *http.R
 	}
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(writer, `{"id":`)
+	if _, err := io.WriteString(writer, `{"id":`); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveEarlyEOFPostOutput(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
@@ -47,14 +55,18 @@ func (h *Handler) serveEarlyEOFPostOutput(writer http.ResponseWriter, request *h
 		return
 	}
 	chunk := streamChunk(h.responseID(state.ordinal), h.createdAt(), decoded.Model, map[string]any{"role": "assistant", "content": "visible"}, nil)
-	h.serveRawStream(writer, request, state, mustSSE(chunk), false)
+	if err := h.serveRawStream(writer, request, state, mustSSE(chunk), false); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveEmptyOutput(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
 	if !h.readyTerminal(request, state) {
 		return
 	}
-	h.writeBuffered(writer, decoded.Model, state.ordinal, map[string]any{"role": "assistant", "content": nil}, "stop", validUsage())
+	if err := h.writeBuffered(writer, decoded.Model, state.ordinal, map[string]any{"role": "assistant", "content": nil}, "stop", validUsage()); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveInvalidToolArguments(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
@@ -65,7 +77,9 @@ func (h *Handler) serveInvalidToolArguments(writer http.ResponseWriter, request 
 		"role": "assistant", "content": nil,
 		"tool_calls": []any{map[string]any{"id": "call-mock", "type": "function", "function": map[string]any{"name": "lookup", "arguments": `{"city":`}}},
 	}
-	h.writeBuffered(writer, decoded.Model, state.ordinal, message, "tool_calls", validUsage())
+	if err := h.writeBuffered(writer, decoded.Model, state.ordinal, message, "tool_calls", validUsage()); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) servePartialToolArguments(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
@@ -78,14 +92,18 @@ func (h *Handler) servePartialToolArguments(writer http.ResponseWriter, request 
 		"tool_calls": []any{map[string]any{"index": 0, "id": "call-mock", "type": "function", "function": map[string]any{"name": "lookup", "arguments": `{"city":`}}},
 	}, nil)
 	finished := streamChunk(id, h.createdAt(), decoded.Model, map[string]any{}, "tool_calls")
-	h.serveRawStream(writer, request, state, mustSSE(started)+mustSSE(finished)+"data: [DONE]\n\n", false)
+	if err := h.serveRawStream(writer, request, state, mustSSE(started)+mustSSE(finished)+"data: [DONE]\n\n", false); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveStructuredViolation(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
 	if !h.readyTerminal(request, state) {
 		return
 	}
-	h.writeBuffered(writer, decoded.Model, state.ordinal, map[string]any{"role": "assistant", "content": `{"answer":17}`}, "stop", validUsage())
+	if err := h.writeBuffered(writer, decoded.Model, state.ordinal, map[string]any{"role": "assistant", "content": `{"answer":17}`}, "stop", validUsage()); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveInvalidEventOrder(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
@@ -94,36 +112,40 @@ func (h *Handler) serveInvalidEventOrder(writer http.ResponseWriter, request *ht
 	}
 	id := h.responseID(state.ordinal)
 	finished := streamChunk(id, h.createdAt(), decoded.Model, map[string]any{"role": "assistant"}, "tool_calls")
-	h.serveRawStream(writer, request, state, mustSSE(finished)+"data: [DONE]\n\n", false)
+	if err := h.serveRawStream(writer, request, state, mustSSE(finished)+"data: [DONE]\n\n", false); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveUsageInconsistent(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
 	if !h.readyTerminal(request, state) {
 		return
 	}
-	h.writeBuffered(writer, decoded.Model, state.ordinal, map[string]any{"role": "assistant", "content": "usage"}, "stop", map[string]any{"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 99})
+	if err := h.writeBuffered(writer, decoded.Model, state.ordinal, map[string]any{"role": "assistant", "content": "usage"}, "stop", map[string]any{"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 99}); err != nil {
+		state.cancel()
+	}
 }
 
-func (h *Handler) serveRawStream(writer http.ResponseWriter, request *http.Request, state *requestState, body string, terminal bool) {
+func (h *Handler) serveRawStream(writer http.ResponseWriter, request *http.Request, state *requestState, body string, terminal bool) error {
 	if terminal && !h.readyTerminal(request, state) {
-		return
+		return nil
 	}
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.WriteHeader(http.StatusOK)
-	_, _ = io.WriteString(writer, body)
-	if flusher, ok := writer.(http.Flusher); ok {
-		flusher.Flush()
+	if _, err := io.WriteString(writer, body); err != nil {
+		return err
 	}
+	return http.NewResponseController(writer).Flush()
 }
 
 func (h *Handler) readyTerminal(request *http.Request, state *requestState) bool {
 	return state.reach(request.Context(), EventResponseTerminalReady) == nil
 }
 
-func (h *Handler) writeBuffered(writer http.ResponseWriter, model string, ordinal uint64, message map[string]any, finishReason string, usage map[string]any) {
+func (h *Handler) writeBuffered(writer http.ResponseWriter, model string, ordinal uint64, message map[string]any, finishReason string, usage map[string]any) error {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(http.StatusOK)
-	_ = writeJSON(writer, map[string]any{
+	return writeJSON(writer, map[string]any{
 		"id": h.responseID(ordinal), "object": "chat.completion", "created": h.createdAt(), "model": model,
 		"choices": []any{map[string]any{"index": 0, "message": message, "finish_reason": finishReason}}, "usage": usage,
 	})

@@ -11,8 +11,11 @@ func (h *Handler) serveUntilCancellation(writer http.ResponseWriter, request *ht
 		writer.Header().Set("Content-Type", "application/json")
 	}
 	writer.WriteHeader(http.StatusOK)
-	if flusher, ok := writer.(http.Flusher); ok {
-		flusher.Flush()
+	if _, ok := writer.(http.Flusher); ok {
+		if err := http.NewResponseController(writer).Flush(); err != nil {
+			state.cancel()
+			return
+		}
 	}
 	<-request.Context().Done()
 	state.cancel()
@@ -24,7 +27,9 @@ func (h *Handler) serveFailureSequence(writer http.ResponseWriter, request *http
 		if !h.readyTerminal(request, state) {
 			return
 		}
-		writeProviderError(writer, behavior.Status, "injected_sequence_failure")
+		if err := writeProviderError(writer, behavior.Status, "injected_sequence_failure"); err != nil {
+			state.cancel()
+		}
 		return
 	}
 	h.serveSyntheticSuccess(writer, request, decoded, state, "deterministic recovered response")

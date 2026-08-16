@@ -15,7 +15,7 @@ func TestNewProviderHandlerUsesStartupSelectedProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, mockprovider.ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, mockprovider.ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusServiceUnavailable {

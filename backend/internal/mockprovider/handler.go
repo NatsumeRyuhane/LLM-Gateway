@@ -45,12 +45,12 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	if request.Method != http.MethodPost {
 		writer.Header().Set("Allow", http.MethodPost)
-		writeProviderError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
+		_ = writeProviderError(writer, http.StatusMethodNotAllowed, "method_not_allowed")
 		return
 	}
 	decoded, err := decodeRequest(request)
 	if err != nil {
-		writeProviderError(writer, http.StatusBadRequest, "invalid_request")
+		_ = writeProviderError(writer, http.StatusBadRequest, "invalid_request")
 		return
 	}
 	mode := ModeBuffered
@@ -59,7 +59,7 @@ func (h *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Request) {
 	}
 	profile := h.scenario.profile
 	if profile.Mode != ModeEither && profile.Mode != mode {
-		writeProviderError(writer, http.StatusBadRequest, "mode_mismatch")
+		_ = writeProviderError(writer, http.StatusBadRequest, "mode_mismatch")
 		return
 	}
 	state := h.scenario.begin(mode)
@@ -90,11 +90,17 @@ func (h *Handler) serveProfile(writer http.ResponseWriter, request *http.Request
 	case "malformed_json":
 		h.serveMalformedJSON(writer, request, state)
 	case "malformed_sse":
-		h.serveRawStream(writer, request, state, "event: message\ndata: {}\n\n", false)
+		if err := h.serveRawStream(writer, request, state, "event: message\ndata: {}\n\n", false); err != nil {
+			state.cancel()
+		}
 	case "malformed_sse_json":
-		h.serveRawStream(writer, request, state, "data: {\n\n", false)
+		if err := h.serveRawStream(writer, request, state, "data: {\n\n", false); err != nil {
+			state.cancel()
+		}
 	case "early_eof_pre_output":
-		h.serveRawStream(writer, request, state, "", false)
+		if err := h.serveRawStream(writer, request, state, "", false); err != nil {
+			state.cancel()
+		}
 	case "early_eof_post_output":
 		h.serveEarlyEOFPostOutput(writer, request, decoded, state)
 	case "empty_output":
@@ -122,7 +128,9 @@ func (h *Handler) serveProfile(writer http.ResponseWriter, request *http.Request
 		}
 		h.serveSyntheticSuccess(writer, request, decoded, state, content)
 	default:
-		writeProviderError(writer, http.StatusNotImplemented, "profile_not_implemented")
+		if err := writeProviderError(writer, http.StatusNotImplemented, "profile_not_implemented"); err != nil {
+			state.cancel()
+		}
 	}
 }
 
@@ -154,13 +162,10 @@ func (h *Handler) serveBufferedText(writer http.ResponseWriter, request *http.Re
 	if err := state.reach(request.Context(), EventResponseTerminalReady); err != nil {
 		return
 	}
-	writer.Header().Set("Content-Type", "application/json")
-	writer.WriteHeader(http.StatusOK)
-	_ = writeJSON(writer, map[string]any{
-		"id": h.responseID(state.ordinal), "object": "chat.completion", "created": h.createdAt(), "model": decoded.Model,
-		"choices": []any{map[string]any{"index": 0, "message": map[string]any{"role": "assistant", "content": content}, "finish_reason": "stop"}},
-		"usage":   map[string]any{"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
-	})
+	message := map[string]any{"role": "assistant", "content": content}
+	if err := h.writeBuffered(writer, decoded.Model, state.ordinal, message, "stop", validUsage()); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) serveSuccessStream(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState) {
@@ -168,11 +173,14 @@ func (h *Handler) serveSuccessStream(writer http.ResponseWriter, request *http.R
 }
 
 func (h *Handler) serveStreamText(writer http.ResponseWriter, request *http.Request, decoded chatRequest, state *requestState, steps []string) {
-	flusher, ok := writer.(http.Flusher)
+	_, ok := writer.(http.Flusher)
 	if !ok {
-		writeProviderError(writer, http.StatusInternalServerError, "streaming_unsupported")
+		if err := writeProviderError(writer, http.StatusInternalServerError, "streaming_unsupported"); err != nil {
+			state.cancel()
+		}
 		return
 	}
+	controller := http.NewResponseController(writer)
 	writer.Header().Set("Content-Type", "text/event-stream")
 	writer.WriteHeader(http.StatusOK)
 	identifier := h.responseID(state.ordinal)
@@ -194,7 +202,10 @@ func (h *Handler) serveStreamText(writer http.ResponseWriter, request *http.Requ
 			state.cancel()
 			return
 		}
-		flusher.Flush()
+		if err := controller.Flush(); err != nil {
+			state.cancel()
+			return
+		}
 	}
 	if err := state.reach(request.Context(), EventResponseTerminalReady); err != nil {
 		return
@@ -217,8 +228,13 @@ func (h *Handler) serveStreamText(writer http.ResponseWriter, request *http.Requ
 			return
 		}
 	}
-	_, _ = io.WriteString(writer, "data: [DONE]\n\n")
-	flusher.Flush()
+	if _, err := io.WriteString(writer, "data: [DONE]\n\n"); err != nil {
+		state.cancel()
+		return
+	}
+	if err := controller.Flush(); err != nil {
+		state.cancel()
+	}
 }
 
 func (h *Handler) responseID(ordinal uint64) string {
@@ -249,10 +265,10 @@ func writeSSE(writer io.Writer, value any) error {
 	return err
 }
 
-func writeProviderError(writer http.ResponseWriter, status int, code string) {
+func writeProviderError(writer http.ResponseWriter, status int, code string) error {
 	writer.Header().Set("Content-Type", "application/json")
 	writer.WriteHeader(status)
-	_ = writeJSON(writer, map[string]any{"error": map[string]any{"type": code, "code": code}})
+	return writeJSON(writer, map[string]any{"error": map[string]any{"type": code, "code": code}})
 }
 
 func writeJSON(writer io.Writer, value any) error { return json.NewEncoder(writer).Encode(value) }

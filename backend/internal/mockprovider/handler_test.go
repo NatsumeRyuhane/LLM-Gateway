@@ -79,12 +79,12 @@ func TestStreamingSuccessHasTerminalSentinel(t *testing.T) {
 func TestHandlerRejectsUnknownSurfaceAndModeMismatch(t *testing.T) {
 	handler := newTestHandler(t, "success.buffered", 1, nil)
 	unknown := httptest.NewRecorder()
-	handler.ServeHTTP(unknown, httptest.NewRequest(http.MethodPost, "/unknown", nil))
+	handler.ServeHTTP(unknown, httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/unknown", nil))
 	if unknown.Code != http.StatusNotFound {
 		t.Fatalf("unknown status = %d", unknown.Code)
 	}
 	mismatch := httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`))
 	handler.ServeHTTP(mismatch, request)
 	if mismatch.Code != http.StatusBadRequest {
 		t.Fatalf("mode mismatch status = %d", mismatch.Code)
@@ -93,7 +93,7 @@ func TestHandlerRejectsUnknownSurfaceAndModeMismatch(t *testing.T) {
 
 func TestRateLimitProfileEmitsConfiguredRetryAfter(t *testing.T) {
 	handler := newTestHandler(t, "http.429_retry_after", 1, nil)
-	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusTooManyRequests || response.Header().Get("Retry-After") != "3" {
@@ -118,7 +118,7 @@ func TestGatedStreamUsesEventsInsteadOfSleeps(t *testing.T) {
 		}
 	})
 	handler := newTestHandlerWithOptions(t, "timing.slow_first_token", ScenarioOptions{Scheduler: scheduler})
-	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`))
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -149,8 +149,8 @@ func TestGatedStreamUsesEventsInsteadOfSleeps(t *testing.T) {
 func TestAwaitCancellationObservesAndStopsRequest(t *testing.T) {
 	observed := make(chan Observation, 8)
 	handler := newTestHandlerWithOptions(t, "lifecycle.await_cancellation", ScenarioOptions{Observer: ObserverFunc(func(value Observation) { observed <- value })})
-	ctx, cancel := context.WithCancel(context.Background())
-	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`)).WithContext(ctx)
+	ctx, cancel := context.WithCancel(t.Context())
+	request := httptest.NewRequestWithContext(ctx, http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":true}`))
 	response := httptest.NewRecorder()
 	done := make(chan struct{})
 	go func() {
@@ -171,7 +171,7 @@ func TestFailureRecoveryStateIsScenarioLocal(t *testing.T) {
 	for scenarioIndex := 0; scenarioIndex < 2; scenarioIndex++ {
 		handler := newTestHandler(t, "sequence.recover_after_2", 11, nil)
 		for ordinal, wantStatus := range []int{http.StatusServiceUnavailable, http.StatusServiceUnavailable, http.StatusOK} {
-			request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false}`))
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
 			if response.Code != wantStatus {
@@ -186,16 +186,47 @@ func TestSilentProfilesRemainSuccessfulAndLabeled(t *testing.T) {
 		t.Run(profileID, func(t *testing.T) {
 			observed := make(chan Observation, 8)
 			handler := newTestHandlerWithOptions(t, profileID, ScenarioOptions{Observer: ObserverFunc(func(value Observation) { observed <- value })})
-			request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false,"temperature":0.25}`))
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, strings.NewReader(`{"model":"m","stream":false,"temperature":0.25}`))
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
 			if response.Code != http.StatusOK {
 				t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
 			}
-			observation := <-observed
+			observation := waitForObservation(t, observed, EventRequestReceived)
 			if observation.GroundTruth == "" || observation.ProfileID != profileID {
 				t.Fatalf("observation = %#v", observation)
 			}
+		})
+	}
+}
+
+func TestResponseWriteFailuresRecordCancellation(t *testing.T) {
+	tests := []struct {
+		profileID string
+		stream    bool
+		failAt    int
+	}{
+		{profileID: "http.503", failAt: 1},
+		{profileID: "bounds.buffered_body", failAt: 1},
+		{profileID: "protocol.malformed_json", failAt: 1},
+		{profileID: "success.buffered", failAt: 1},
+		{profileID: "protocol.malformed_sse", stream: true, failAt: 1},
+		{profileID: "success.streaming", stream: true, failAt: 4},
+	}
+	for _, test := range tests {
+		t.Run(test.profileID, func(t *testing.T) {
+			observed := make(chan Observation, 8)
+			handler := newTestHandlerWithOptions(t, test.profileID, ScenarioOptions{
+				Observer: ObserverFunc(func(value Observation) { observed <- value }),
+			})
+			body := `{"model":"m","stream":false}`
+			if test.stream {
+				body = `{"model":"m","stream":true}`
+			}
+			request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, strings.NewReader(body))
+			writer := &writeFailureRecorder{header: make(http.Header), failAt: test.failAt}
+			handler.ServeHTTP(writer, request)
+			waitForObservation(t, observed, EventRequestCancelled)
 		})
 	}
 }
@@ -214,7 +245,7 @@ func runProfile(t *testing.T, profileID string, seed int64) (string, []Observati
 	if stream {
 		body = `{"model":"mock-model","stream":true,"stream_options":{"include_usage":true}}`
 	}
-	request := httptest.NewRequest(http.MethodPost, ChatCompletionsPath, strings.NewReader(body))
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodPost, ChatCompletionsPath, strings.NewReader(body))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
@@ -248,17 +279,40 @@ func newTestHandlerWithOptions(t *testing.T, profileID string, options ScenarioO
 	return handler
 }
 
-func waitForObservation(t *testing.T, observed <-chan Observation, want Event) {
+func waitForObservation(t *testing.T, observed <-chan Observation, want Event) Observation {
 	t.Helper()
 	deadline := time.After(2 * time.Second)
 	for {
 		select {
 		case observation := <-observed:
 			if observation.Event == want {
-				return
+				return observation
 			}
 		case <-deadline:
 			t.Fatalf("did not observe %s", want)
 		}
 	}
 }
+
+type writeFailureRecorder struct {
+	header http.Header
+	status int
+	writes int
+	failAt int
+}
+
+func (w *writeFailureRecorder) Header() http.Header { return w.header }
+
+func (w *writeFailureRecorder) WriteHeader(status int) { w.status = status }
+
+func (w *writeFailureRecorder) Write(body []byte) (int, error) {
+	w.writes++
+	if w.writes == w.failAt {
+		return 0, io.ErrClosedPipe
+	}
+	return len(body), nil
+}
+
+func (w *writeFailureRecorder) Flush() {}
+
+func (w *writeFailureRecorder) FlushError() error { return nil }

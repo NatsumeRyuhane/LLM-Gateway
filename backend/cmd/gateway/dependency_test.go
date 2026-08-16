@@ -1,23 +1,19 @@
 package main
 
 import (
-	"go/parser"
-	"go/token"
-	"strconv"
+	"bytes"
+	"os/exec"
 	"testing"
 )
 
 func TestGatewayDoesNotImportMockProvider(t *testing.T) {
-	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, parser.ImportsOnly)
+	command := exec.CommandContext(t.Context(), "go", "list", "-deps", ".")
+	output, err := command.Output()
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("go list gateway dependencies: %v", err)
 	}
-	for _, imported := range file.Imports {
-		path, err := strconv.Unquote(imported.Path.Value)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if path == "github.com/NatsumeRyuhane/LLM-Gateway/backend/internal/mockprovider" {
+	for _, dependency := range bytes.Fields(output) {
+		if string(dependency) == "github.com/NatsumeRyuhane/LLM-Gateway/backend/internal/mockprovider" {
 			t.Fatal("production gateway command imports mock-provider behavior")
 		}
 	}

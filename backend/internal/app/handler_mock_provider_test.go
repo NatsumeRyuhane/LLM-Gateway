@@ -65,7 +65,7 @@ func TestMockProviderProfilesDriveAuthenticatedVerticalSliceEvidence(t *testing.
 			} else if response.Code != http.StatusBadGateway || !strings.Contains(response.Body.String(), `"code":"`+expected.FailureCode+`"`) {
 				t.Fatalf("failure response status=%d body=%s", response.Code, response.Body.String())
 			}
-			observation := <-observations
+			observation := waitForMockProviderObservation(t, observations, mockprovider.EventRequestReceived)
 			if observation.SchemaVersion != mockprovider.ObservationSchemaVersion || observation.ProfileID != profile.ID || observation.GroundTruth != profile.GroundTruth || observation.Event != mockprovider.EventRequestReceived {
 				t.Fatalf("first observation = %#v", observation)
 			}
@@ -177,7 +177,7 @@ func assertAttemptMatchesProfile(t *testing.T, attempt telemetry.AttemptEvidence
 	}
 }
 
-func waitForMockProviderObservation(t *testing.T, observations <-chan mockprovider.Observation, want mockprovider.Event) {
+func waitForMockProviderObservation(t *testing.T, observations <-chan mockprovider.Observation, want mockprovider.Event) mockprovider.Observation {
 	t.Helper()
 	timer := time.NewTimer(2 * time.Second)
 	defer timer.Stop()
@@ -185,7 +185,7 @@ func waitForMockProviderObservation(t *testing.T, observations <-chan mockprovid
 		select {
 		case observation := <-observations:
 			if observation.Event == want {
-				return
+				return observation
 			}
 		case <-timer.C:
 			t.Fatalf("mock provider did not observe %s", want)
