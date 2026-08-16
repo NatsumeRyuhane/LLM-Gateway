@@ -46,7 +46,7 @@ func (a *Adapter) Buffered(ctx context.Context, attempt provider.Attempt, reques
 		return protocol.ValidatedChatResponse{}, attachAttempt(classifyResponseStatus(response, route.Limits().MaxErrorBodyBytes), request, attempt, route)
 	}
 	if !jsonContentType(response.Header.Get("Content-Type")) {
-		return protocol.ValidatedChatResponse{}, attachAttempt(protocolFailure(protocol.FailureProtocolInvalidJSON, "The upstream response is invalid JSON.", "response.content_type", "must be application/json"), request, attempt, route)
+		return protocol.ValidatedChatResponse{}, attachAttempt(withProviderStatus(protocolFailure(protocol.FailureProtocolInvalidJSON, "The upstream response is invalid JSON.", "response.content_type", "must be application/json"), response.StatusCode), request, attempt, route)
 	}
 
 	var wire chatResponse
@@ -58,10 +58,10 @@ func (a *Adapter) Buffered(ctx context.Context, attempt provider.Attempt, reques
 		if errors.Is(err, errResponseTooLarge) {
 			code = protocol.FailureUpstreamResponseTooLarge
 		}
-		return protocol.ValidatedChatResponse{}, attachAttempt(protocolFailure(code, "The upstream response is invalid.", "response.body", "must be one bounded JSON object"), request, attempt, route)
+		return protocol.ValidatedChatResponse{}, attachAttempt(withProviderStatus(protocolFailure(code, "The upstream response is invalid.", "response.body", "must be one bounded JSON object"), response.StatusCode), request, attempt, route)
 	}
 	if wire.Object != "chat.completion" || len(wire.Choices) != 1 || wire.Choices[0].Index != 0 || wire.Choices[0].FinishReason == nil {
-		return protocol.ValidatedChatResponse{}, attachAttempt(protocolFailure(protocol.FailureProtocolInvalidJSON, "The upstream response is invalid.", "response", "must contain exactly one complete Chat Completions choice"), request, attempt, route)
+		return protocol.ValidatedChatResponse{}, attachAttempt(withProviderStatus(protocolFailure(protocol.FailureProtocolInvalidJSON, "The upstream response is invalid.", "response", "must contain exactly one complete Chat Completions choice"), response.StatusCode), request, attempt, route)
 	}
 	canonical := protocol.CanonicalChatResponse{
 		ResponseID: wire.ID, RequestID: request.Canonical().RequestID, AttemptID: attempt.ID, RouteID: route.ID(),
@@ -72,7 +72,7 @@ func (a *Adapter) Buffered(ctx context.Context, attempt provider.Attempt, reques
 		canonical.Usage = protocol.Some(translateUsage(*wire.Usage, false))
 	}
 	validated, validationFailure := protocol.ValidateChatResponse(canonical, request)
-	return validated, attachAttempt(validationFailure, request, attempt, route)
+	return validated, attachAttempt(withProviderStatus(validationFailure, response.StatusCode), request, attempt, route)
 }
 
 var errResponseTooLarge = errors.New("provider response exceeds limit")

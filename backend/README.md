@@ -32,9 +32,11 @@ on `127.0.0.1:8081`. Both expose:
 - `GET /readyz`, which succeeds only after the listener is owned and before
   shutdown begins.
 
-The mock provider currently contains only the process lifecycle and health
-surface. Deterministic response profiles, fault injection, and any test-only
-control surface remain scoped to issue #7.
+The mock provider also serves `POST /v1/chat/completions` through the same
+versioned deterministic profile engine used by in-process tests. It has no
+mutable HTTP control surface: select one embedded profile and seed at startup,
+then restart the disposable process to change scenarios. The profile and fault
+matrix contract is in [`docs/mock-provider.md`](../docs/mock-provider.md).
 
 ## Configuration
 
@@ -49,6 +51,14 @@ Each process accepts the same suffixes under a distinct environment prefix:
 | `_HTTP_WRITE_TIMEOUT` | `30s` | `30s` |
 | `_HTTP_IDLE_TIMEOUT` | `60s` | `60s` |
 | `_HTTP_SHUTDOWN_TIMEOUT` | `10s` | `10s` |
+
+The standalone mock provider additionally accepts:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `MOCK_PROVIDER_PROFILE` | `success.buffered` | Embedded versioned profile ID |
+| `MOCK_PROVIDER_SEED` | `1` | Non-zero deterministic signed 64-bit seed |
+| `MOCK_PROVIDER_STEP_DELAY` | `250ms` | Per-chunk delay for gated timing profiles, from `0s` through `30s` |
 
 For example, `GATEWAY_HTTP_ADDR=127.0.0.1:9090` changes the gateway listener.
 Configuration is validated before the process binds a socket. Errors identify
@@ -65,6 +75,10 @@ the rejected variable without repeating its value.
   decision, response, and attempt identifiers.
 - `internal/config` owns configuration loading and validation.
 - `internal/health` owns process and route-health state.
+- `internal/mockprovider` owns immutable versioned synthetic upstream profiles,
+  scenario-local sequence state, deterministic Chat Completions wire behavior,
+  synchronization, and metadata-only ground-truth observations. Production
+  gateway packages do not import it.
 - `internal/protocol` owns provider-neutral Chat Completions requests, responses,
   capabilities, failures, bounded JSON Schema validation, and stream lifecycle
   enforcement.

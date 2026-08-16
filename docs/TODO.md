@@ -14,7 +14,7 @@ backlog.
 | [#4](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/4) | Failure taxonomy, SLIs, and availability contract | Complete in contract pack |
 | [#5](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/5) | Identity, credential, and endpoint threat model | Complete in contract pack |
 | [#6](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/6) | Canonical protocol and provider-adapter contract | Complete in contract pack |
-| [#7](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/7) | Deterministic mock-provider and fault matrix | Deferred; #9 provides the health-only process that later fault tests will extend |
+| [#7](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/7) | Deterministic mock-provider and fault matrix | Implemented with schema-complete immutable v0 catalog validation, deterministic buffered/SSE scenarios, explicit lifecycle and write-failure cancellation evidence, scenario-local recovery state, faithful external transport/downstream harnesses, standalone startup selection, metadata-only ground truth, and adapter plus authenticated vertical-slice coverage |
 | [#8](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/8) | Observability, privacy, and cardinality contract | Complete in contract pack |
 | [#9](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/9) | Go modular-monolith backend scaffold | Implemented with two commands, explicit package boundaries, bounded lifecycle, health semantics, and CI checks |
 
@@ -26,7 +26,7 @@ backlog.
 | [#18](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/18) | Strict OpenAI-compatible downstream codec | Implemented with bounded HTTP/JSON decoding, explicit defaults/aliases/rejections, validated buffered/error encoding, attempt-isolated SSE serialization, conformance goldens, and fuzz coverage |
 | [#19](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/19) | OpenAI-compatible upstream adapter success path | Implemented with validated route inputs, private wire models, lossless request translation, bounded buffered/SSE parsing, canonical response/event validation, route-owned credentials, and cancellation coverage |
 | [#20](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/20) | Application authentication and request attribution | Implemented with typed application principals, keyed non-reversible credential verification, exact surface scopes, application-bound conversation/run attribution, generic safe failures, and allowlisted provider request construction |
-| [#21](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/21) | Authenticated single-route streaming vertical slice | Implemented with authenticated models and Chat Completions handlers, one injected authorized route and attempt, delayed streaming commitment, cancellation/downstream-failure cleanup, metadata-only evidence, and hermetic end-to-end coverage; #7 is the next reliability-test substrate |
+| [#21](https://github.com/NatsumeRyuhane/LLM-Gateway/issues/21) | Authenticated single-route streaming vertical slice | Implemented with authenticated models and Chat Completions handlers, one injected authorized route and attempt, delayed streaming commitment, cancellation/downstream-failure cleanup, metadata-only evidence, and hermetic end-to-end coverage |
 
 ## Later milestones
 

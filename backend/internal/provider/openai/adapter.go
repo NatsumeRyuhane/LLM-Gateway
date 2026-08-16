@@ -2,7 +2,10 @@ package openai
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
+	"net"
 	"net/http"
 	"time"
 
@@ -60,6 +63,19 @@ func attachAttempt(failure *protocol.CanonicalError, request protocol.ValidatedC
 	return &attached
 }
 
+func withProviderStatus(failure *protocol.CanonicalError, status int) *protocol.CanonicalError {
+	if failure == nil {
+		return nil
+	}
+	attached := *failure
+	if failure.Validation != nil {
+		validation := *failure.Validation
+		attached.Validation = &validation
+	}
+	attached.ProviderStatus = status
+	return &attached
+}
+
 func classifyTransport(err error) *protocol.CanonicalError {
 	if errors.Is(err, context.Canceled) {
 		return failure(protocol.FailureClientCancelled, protocol.DomainClient, protocol.RetryNever, 499, "The request was cancelled.")
@@ -67,7 +83,27 @@ func classifyTransport(err error) *protocol.CanonicalError {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return failure(protocol.FailureUpstreamTimeout, protocol.DomainUpstream, protocol.RetryPreOutputAlternate, http.StatusBadGateway, "The upstream request timed out.")
 	}
+	var dnsFailure *net.DNSError
+	if errors.As(err, &dnsFailure) {
+		return failure(protocol.FailureUpstreamDNSFailed, protocol.DomainUpstream, protocol.RetryPreOutputAlternate, http.StatusBadGateway, "The upstream provider name could not be resolved.")
+	}
+	if isTLSTransportFailure(err) {
+		return failure(protocol.FailureUpstreamTLSFailed, protocol.DomainUpstream, protocol.RetryPreOutputAlternate, http.StatusBadGateway, "The upstream provider TLS connection failed.")
+	}
 	return failure(protocol.FailureUpstreamConnectFailed, protocol.DomainUpstream, protocol.RetryPreOutputSameOrAlternate, http.StatusBadGateway, "The upstream provider could not be reached.")
+}
+
+func isTLSTransportFailure(err error) bool {
+	var certificateFailure *tls.CertificateVerificationError
+	var recordFailure tls.RecordHeaderError
+	var unknownAuthority x509.UnknownAuthorityError
+	var hostnameFailure x509.HostnameError
+	var invalidCertificate x509.CertificateInvalidError
+	return errors.As(err, &certificateFailure) ||
+		errors.As(err, &recordFailure) ||
+		errors.As(err, &unknownAuthority) ||
+		errors.As(err, &hostnameFailure) ||
+		errors.As(err, &invalidCertificate)
 }
 
 func failure(code protocol.FailureCode, domain protocol.FailureDomain, retry protocol.RetryDisposition, status int, message string) *protocol.CanonicalError {
