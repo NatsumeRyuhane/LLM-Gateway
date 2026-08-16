@@ -59,7 +59,7 @@ func newProviderHandler(settings config.MockProvider, logger *slog.Logger) (http
 		return nil, fmt.Errorf("mock-provider profile is unknown")
 	}
 	var scheduler mockprovider.Scheduler
-	if profile.Behavior.Kind == "gated_stream" {
+	if profile.Behavior.Kind == mockprovider.BehaviorGatedStream {
 		delays, delayErr := mockprovider.NewDelayScheduler(map[mockprovider.Event]time.Duration{
 			mockprovider.EventResponseChunkReady: settings.StepDelay,
 		})

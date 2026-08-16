@@ -10,6 +10,9 @@ import (
 
 const MatrixSchemaVersion = "gateway.mock-provider.matrix.v0"
 
+// BehaviorGatedStream identifies profiles whose chunks consume scheduler steps.
+const BehaviorGatedStream = "gated_stream"
+
 //go:embed fixtures/v0/matrix.json
 var embeddedMatrix []byte
 
@@ -83,8 +86,12 @@ type Catalog struct {
 
 // LoadCatalog parses and validates a fresh immutable catalog snapshot.
 func LoadCatalog() (Catalog, error) {
+	return loadCatalog(embeddedMatrix)
+}
+
+func loadCatalog(encoded []byte) (Catalog, error) {
 	var document matrixDocument
-	decoder := json.NewDecoder(bytesReader(embeddedMatrix))
+	decoder := json.NewDecoder(bytesReader(encoded))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&document); err != nil {
 		return Catalog{}, fmt.Errorf("decode mock-provider matrix: %w", err)
@@ -97,6 +104,9 @@ func LoadCatalog() (Catalog, error) {
 	}
 	if len(document.Profiles) == 0 {
 		return Catalog{}, errors.New("mock-provider matrix must contain profiles")
+	}
+	if !validToken(document.DefaultProfile, 128) {
+		return Catalog{}, errors.New("mock-provider default profile is invalid")
 	}
 	profiles := make(map[string]Profile, len(document.Profiles))
 	for index, profile := range document.Profiles {
@@ -153,12 +163,26 @@ func validateProfile(profile Profile) error {
 	if !validToken(profile.Behavior.Kind, 64) || !validToken(profile.GroundTruth, 128) {
 		return errors.New("behavior or ground-truth label is invalid")
 	}
+	if err := validateBehavior(profile.Behavior); err != nil {
+		return err
+	}
 	if profile.Expected.FailureCode == "" {
 		if profile.Expected.Domain != "" || profile.Expected.RetryDisposition != "" {
 			return errors.New("successful expectation cannot contain failure metadata")
 		}
 	} else if !validToken(profile.Expected.FailureCode, 128) || !validToken(profile.Expected.Domain, 32) || !validToken(profile.Expected.RetryDisposition, 64) {
 		return errors.New("failure expectation is invalid")
+	}
+	if profile.Expected.ProviderStatus < 0 || profile.Expected.ProviderStatus > 599 || !validTerminal(profile.Expected.Terminal) {
+		return errors.New("expected provider status or terminal is invalid")
+	}
+	switch profile.DetectionOwner {
+	case "m1_immediate", "m3_health", "harness_only":
+	default:
+		return errors.New("detection owner is invalid")
+	}
+	if len(profile.SynchronizationEvents) > 5 {
+		return errors.New("too many synchronization events")
 	}
 	seen := make(map[Event]struct{}, len(profile.SynchronizationEvents))
 	for _, event := range profile.SynchronizationEvents {
@@ -170,7 +194,53 @@ func validateProfile(profile Profile) error {
 		}
 		seen[event] = struct{}{}
 	}
+	if len(profile.Evidence) > 16 {
+		return errors.New("too many evidence events")
+	}
+	evidence := make(map[string]struct{}, len(profile.Evidence))
+	for _, event := range profile.Evidence {
+		if !validToken(event, 64) {
+			return errors.New("evidence event is invalid")
+		}
+		if _, duplicate := evidence[event]; duplicate {
+			return errors.New("evidence event is duplicated")
+		}
+		evidence[event] = struct{}{}
+	}
 	return nil
+}
+
+func validateBehavior(behavior Behavior) error {
+	if behavior.Status != 0 && (behavior.Status < 100 || behavior.Status > 599) {
+		return errors.New("behavior status is invalid")
+	}
+	if len(behavior.RetryAfter) > 128 {
+		return errors.New("behavior retry-after is invalid")
+	}
+	if behavior.Bytes != 0 && (behavior.Bytes < 1 || behavior.Bytes > 16<<20) {
+		return errors.New("behavior byte count is invalid")
+	}
+	if behavior.FailuresBeforeSuccess < 0 || behavior.FailuresBeforeSuccess > 1000 {
+		return errors.New("behavior failure count is invalid")
+	}
+	if len(behavior.Steps) > 64 {
+		return errors.New("too many behavior steps")
+	}
+	for _, step := range behavior.Steps {
+		if len(step) > 64 {
+			return errors.New("behavior step is too long")
+		}
+	}
+	return nil
+}
+
+func validTerminal(terminal string) bool {
+	switch terminal {
+	case "completed", "failed_pre_output", "failed_partial", "cancelled_client", "cancelled_deadline", "early_eof", "other":
+		return true
+	default:
+		return false
+	}
 }
 
 func cloneProfile(profile Profile) Profile {

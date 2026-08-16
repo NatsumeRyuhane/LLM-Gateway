@@ -54,7 +54,7 @@
             "provider_status": {"type": "integer", "minimum": 0, "maximum": 599},
             "output_visible": {"type": "boolean"},
             "tool_actionable": {"type": "boolean"},
-            "terminal": {"type": "string", "maxLength": 64}
+            "terminal": {"enum": ["completed", "failed_pre_output", "failed_partial", "cancelled_client", "cancelled_deadline", "early_eof", "other"]}
           }
         },
         "ground_truth": {"type": "string", "minLength": 1, "maxLength": 128},
